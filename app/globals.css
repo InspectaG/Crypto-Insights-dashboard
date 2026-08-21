@@ -45,6 +45,7 @@ button { color: inherit; }
 .topbarRight { align-items: center; display: flex; gap: 18px; }
 .viewerName { color: #aab5cc; font-size: 10px; }
 .settingsLink { color: #7f8ba3; font-family: var(--font-geist-mono); font-size: 8px; letter-spacing: .12em; text-decoration: none; }.settingsLink:hover { color: var(--blue); }
+.backLink { color: var(--blue); font-family: var(--font-geist-mono); font-size: 8px; letter-spacing: .1em; text-decoration: none; }.backLink:hover { text-decoration: underline; }
 .status, .demoPill { color: #96a0b8; font-family: var(--font-geist-mono); font-size: 10px; letter-spacing: .12em; }
 .status i, .liveBadge i { background: var(--green); border-radius: 50%; box-shadow: 0 0 10px rgba(99,230,190,.9); display: inline-block; height: 6px; margin-right: 7px; width: 6px; }
 .demoPill { background: rgba(246,198,91,.08); border: 1px solid rgba(246,198,91,.2); border-radius: 999px; color: var(--amber); padding: 7px 10px; }
@@ -220,8 +221,10 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .safetyLock { background: rgba(255,123,134,.05); border: 1px solid rgba(255,123,134,.12); border-radius: 8px; padding: 12px; }.safetyLock strong { color: var(--red); display: block; font-size: 9px; }.safetyLock p { color: #758198; font-size: 9px; line-height: 1.5; margin: 5px 0 0; }
 .manageConnection { color: var(--blue); display: inline-block; font-size: 9px; margin-top: 13px; text-decoration: none; }.manageConnection:hover { text-decoration: underline; }
 
+.settingsShell { min-height: 100vh; }
 .settingsSection { margin: 44px 0 24px; scroll-margin-top: 22px; }
 .settingsTitle { align-items: center; }
+.settingsTitle h1 { font-size: clamp(30px, 4vw, 42px); margin-bottom: 9px; }
 .settingsGrid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); }
 .credentialForm, .credentialSafety { padding: 22px; }
 .credentialSummary { align-items: center; background: #090e18; border: 1px solid var(--line); border-radius: 8px; display: flex; justify-content: space-between; margin-bottom: 17px; min-height: 62px; padding: 12px; }
@@ -229,7 +232,7 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .credentialField { display: block; margin-top: 13px; }.credentialField > span { color: #7d899f; display: block; font-size: 9px; margin-bottom: 7px; }.credentialField input, .credentialField textarea { background: #080d17; border: 1px solid #202a40; border-radius: 7px; color: #dfe7f7; font-family: var(--font-geist-mono); font-size: 10px; outline: 0; padding: 11px; resize: vertical; width: 100%; }.credentialField input:focus, .credentialField textarea:focus { border-color: rgba(122,162,255,.58); box-shadow: 0 0 0 3px rgba(122,162,255,.08); }.credentialField input::placeholder, .credentialField textarea::placeholder { color: #465168; }
 .credentialActions { align-items: center; display: flex; gap: 9px; margin-top: 16px; }.credentialActions .paperTradeButton { margin: 0; width: auto; }.dangerButton { border-color: rgba(255,123,134,.2); color: var(--red); }
 .credentialMessage { color: #758198; font-size: 9px; line-height: 1.5; margin: 10px 0 0; min-height: 14px; }
-.credentialSafety h3 { font-size: 16px; font-weight: 560; margin: 0; }.credentialSafety ul { list-style: none; margin: 17px 0; padding: 0; }.credentialSafety li { border-bottom: 1px solid rgba(136,153,190,.08); padding: 11px 0; }.credentialSafety li strong, .credentialSafety li span { display: block; }.credentialSafety li strong { font-size: 9px; }.credentialSafety li span { color: #69758c; font-size: 8px; line-height: 1.5; margin-top: 4px; }
+.credentialSafety h2 { font-size: 16px; font-weight: 560; margin: 0; }.credentialSafety ul { list-style: none; margin: 17px 0; padding: 0; }.credentialSafety li { border-bottom: 1px solid rgba(136,153,190,.08); padding: 11px 0; }.credentialSafety li strong, .credentialSafety li span { display: block; }.credentialSafety li strong { font-size: 9px; }.credentialSafety li span { color: #69758c; font-size: 8px; line-height: 1.5; margin-top: 4px; }
 .scopeGuide { background: rgba(122,162,255,.055); border: 1px solid rgba(122,162,255,.13); border-radius: 8px; padding: 13px; }.scopeGuide > strong { color: var(--blue); display: block; font-size: 9px; }.scopeGuide p { color: #758198; font-size: 9px; line-height: 1.55; margin: 6px 0 9px; }.scopeGuide b { color: #aebbd3; }.scopeGuide a { color: var(--blue); font-size: 9px; text-decoration: none; }.scopeGuide a:hover { text-decoration: underline; }
 
 .feedPanel { margin-bottom: 24px; }.feedHeader { align-items: center; padding: 20px 23px; }.filters { background: #0c111e; border: 1px solid var(--line); border-radius: 7px; display: flex; padding: 3px; }.filters button { background: transparent; border: 0; border-radius: 5px; color: #68748d; cursor: pointer; font-size: 9px; padding: 7px 10px; }.filters button.selected { background: #1d273b; color: #d9e1f1; }

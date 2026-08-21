@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   createPaperAccount,
   learningSummary,
@@ -326,12 +327,6 @@ export default function Home() {
   const [fundAmount, setFundAmount] = useState(10_000);
   const [depositAmount, setDepositAmount] = useState(1_000);
   const [oneTimeOrder, setOneTimeOrder] = useState(250);
-  const [coinbaseKeyName, setCoinbaseKeyName] = useState("");
-  const [coinbasePrivateKey, setCoinbasePrivateKey] = useState("");
-  const [coinbaseSaving, setCoinbaseSaving] = useState(false);
-  const [coinbaseMessage, setCoinbaseMessage] = useState(
-    "Credentials are validated server-side before encrypted storage.",
-  );
   const [paperMessage, setPaperMessage] = useState(
     "Forward test is ready. No real orders or money are involved.",
   );
@@ -548,51 +543,6 @@ export default function Home() {
     setAlerts((current) => current.map((alert) => ({ ...alert, readAt: alert.readAt ?? new Date().toISOString() })));
   }
 
-  async function saveCoinbaseConnection(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setCoinbaseSaving(true);
-    setCoinbaseMessage("Validating the key with Coinbase…");
-    try {
-      const response = await fetch("/api/coinbase/credentials", {
-        method: "PUT",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyName: coinbaseKeyName, privateKey: coinbasePrivateKey }),
-      });
-      const result = await response.json() as { error?: string; coinbase?: CoinbaseStatus };
-      if (!response.ok || !result.coinbase) throw new Error(result.error ?? "Coinbase connection failed");
-      setCoinbase(result.coinbase);
-      setCoinbaseKeyName("");
-      setCoinbasePrivateKey("");
-      setCoinbaseMessage("Connection verified and saved. The private key will not be displayed again.");
-    } catch (error) {
-      setCoinbaseMessage(error instanceof Error ? error.message : "Coinbase connection failed");
-    } finally {
-      setCoinbaseSaving(false);
-    }
-  }
-
-  async function removeCoinbaseConnection() {
-    if (!window.confirm(`Remove ${viewer.displayName}'s saved Coinbase connection?`)) return;
-    setCoinbaseSaving(true);
-    try {
-      const response = await fetch("/api/coinbase/credentials", {
-        method: "DELETE",
-        credentials: "same-origin",
-      });
-      const result = await response.json() as { error?: string; coinbase?: CoinbaseStatus };
-      if (!response.ok || !result.coinbase) throw new Error(result.error ?? "Coinbase connection could not be removed");
-      setCoinbase(result.coinbase);
-      setCoinbaseKeyName("");
-      setCoinbasePrivateKey("");
-      setCoinbaseMessage("Saved Coinbase credentials removed from your account.");
-    } catch (error) {
-      setCoinbaseMessage(error instanceof Error ? error.message : "Coinbase connection could not be removed");
-    } finally {
-      setCoinbaseSaving(false);
-    }
-  }
-
   async function toggleAutoPaper(enabled: boolean) {
     setAutoPaperEnabled(enabled);
     try {
@@ -640,7 +590,7 @@ export default function Home() {
             {marketSource === "live" ? "LIVE SOURCES · PAPER ONLY" : "CONNECTING LIVE SOURCES"}
           </span>
           <span className="status"><i /> SYSTEM ONLINE</span>
-          <a className="settingsLink" href="#settings">SETTINGS</a>
+          <Link className="settingsLink" href="/settings">SETTINGS</Link>
           <span className="viewerName">{viewer.displayName}</span>
           <button className="avatar" aria-label={`${viewer.displayName} account`}>
             {viewer.displayName.slice(0, 2).toUpperCase()}
@@ -1178,91 +1128,8 @@ export default function Home() {
               <strong>Kill switch ON · daily real-money limit $0</strong>
               <p>Only read-only account validation exists. There is no real-order route in this build.</p>
             </div>
-            <a className="manageConnection" href="#settings">Manage {viewer.displayName}&apos;s Coinbase connection →</a>
+            <Link className="manageConnection" href="/settings">Open Coinbase settings →</Link>
           </article>
-        </div>
-      </section>
-
-      <section className="settingsSection" id="settings" aria-labelledby="settings-title">
-        <div className="paperTitleRow settingsTitle">
-          <div>
-            <p className="eyebrow">PRIVATE USER SETTINGS</p>
-            <h2 id="settings-title">Coinbase connection</h2>
-            <p>Connect only {viewer.displayName}&apos;s Coinbase account. Your brother cannot view or use these credentials.</p>
-          </div>
-          <span className={`statePill ${coinbase.connected ? "safe" : "off"}`}>
-            {coinbase.connected ? "VERIFIED" : "NOT CONNECTED"}
-          </span>
-        </div>
-
-        <div className="settingsGrid">
-          <form className="panel credentialForm" onSubmit={(event) => void saveCoinbaseConnection(event)}>
-            <div className="credentialSummary">
-              <div>
-                <span className={`connectionDot ${coinbase.connected ? "connected" : ""}`} />
-                <p><strong>{viewer.email}</strong><small>{coinbase.message}</small></p>
-              </div>
-              {coinbaseConnections[0]?.keyHint && <code>{coinbaseConnections[0].keyHint}</code>}
-            </div>
-
-            <label className="credentialField">
-              <span>Coinbase API key name</span>
-              <input
-                aria-label="Coinbase API key name"
-                autoCapitalize="none"
-                autoComplete="off"
-                placeholder="organizations/…/apiKeys/…"
-                spellCheck={false}
-                value={coinbaseKeyName}
-                onChange={(event) => setCoinbaseKeyName(event.target.value)}
-              />
-            </label>
-
-            <label className="credentialField">
-              <span>ECDSA private key</span>
-              <textarea
-                aria-label="Coinbase ECDSA private key"
-                autoCapitalize="none"
-                autoComplete="off"
-                placeholder={"-----BEGIN EC PRIVATE KEY-----\n…\n-----END EC PRIVATE KEY-----"}
-                rows={6}
-                spellCheck={false}
-                value={coinbasePrivateKey}
-                onChange={(event) => setCoinbasePrivateKey(event.target.value)}
-              />
-            </label>
-
-            <div className="credentialActions">
-              <button
-                className="paperTradeButton"
-                disabled={coinbaseSaving || !coinbaseKeyName.trim() || !coinbasePrivateKey.trim()}
-                type="submit"
-              >
-                {coinbaseSaving ? "Validating…" : coinbase.configured ? "Validate and replace" : "Validate and connect"}
-              </button>
-              {coinbase.configured && (
-                <button className="ghostButton dangerButton" disabled={coinbaseSaving} type="button" onClick={() => void removeCoinbaseConnection()}>
-                  Remove connection
-                </button>
-              )}
-            </div>
-            <p className="credentialMessage" role="status">{coinbaseMessage}</p>
-          </form>
-
-          <aside className="panel credentialSafety">
-            <div><p className="eyebrow">CREDENTIAL BOUNDARY</p><h3>Protected by design</h3></div>
-            <ul>
-              <li><strong>Private to this login</strong><span>Each Google-authenticated user has a separate encrypted record.</span></li>
-              <li><strong>Write-only secret</strong><span>The private key is never returned to or redisplayed in the browser.</span></li>
-              <li><strong>Validated before saving</strong><span>The server confirms the key with Coinbase and rejects Transfer permission.</span></li>
-              <li><strong>Trading still locked</strong><span>Saving a key does not enable real orders or change the $0 real-money limit.</span></li>
-            </ul>
-            <div className="scopeGuide">
-              <strong>Recommended key permissions</strong>
-              <p>Start with <b>View</b>. Trade may be added later when we build the guarded execution phase. Leave <b>Transfer</b> off.</p>
-              <a href="https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/api-key-authentication" rel="noreferrer" target="_blank">Open Coinbase key instructions ↗</a>
-            </div>
-          </aside>
         </div>
       </section>
 

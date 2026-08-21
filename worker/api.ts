@@ -237,6 +237,12 @@ export async function handleApi(request: Request, env: WorkerEnv) {
     if (request.method === "GET" && url.pathname === "/api/coinbase/status") {
       return json(await getCoinbaseStatus(env, user.id));
     }
+    if (request.method === "GET" && url.pathname === "/api/coinbase/settings") {
+      return json({
+        user: { id: user.id, email: user.email, displayName: user.displayName },
+        coinbase: await getCoinbaseStatus(env, user.id),
+      });
+    }
     if (request.method === "PUT" && url.pathname === "/api/coinbase/credentials") {
       if (!safeCredentialWrite(request)) return json({ error: "Invalid request origin" }, { status: 403 });
       if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {

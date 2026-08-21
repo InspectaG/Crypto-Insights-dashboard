@@ -46,11 +46,23 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Daily investment cap/);
   assert.match(html, /minimum is \$1\/day/i);
   assert.match(html, /One-time paper cash injection/);
-  assert.match(html, /Coinbase connection/);
-  assert.match(html, /Write-only secret/);
-  assert.match(html, /Saving a key does not enable real orders/i);
+  assert.match(html, /Open Coinbase settings/);
+  assert.doesNotMatch(html, /Coinbase API key name|ECDSA private key|Write-only secret/i);
   assert.match(html, /not financial advice/i);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);
+});
+
+test("keeps Coinbase credentials on a separate settings page", async () => {
+  const response = await render("/settings");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+
+  assert.match(html, /<title>Coinbase Settings \| Gatchek Signals<\/title>/i);
+  assert.match(html, /PRIVATE USER SETTINGS/);
+  assert.match(html, /Coinbase API key name/);
+  assert.match(html, /ECDSA private key/);
+  assert.match(html, /Write-only secret/);
+  assert.match(html, /BACK TO DASHBOARD/);
 });
 
 test("keeps private-dashboard metadata out of search indexes", async () => {
