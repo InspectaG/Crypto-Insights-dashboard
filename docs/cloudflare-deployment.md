@@ -49,8 +49,11 @@ as an allow rule. Those rules are broader than the requested two-person access.
 
 ## 5. Security defaults
 
-- Keep all future provider credentials in Cloudflare secrets.
-- Use read-only market data keys whenever a provider requires credentials.
-- Do not add exchange trading keys during the MVP.
+- Keep `COINBASE_CREDENTIALS_ENCRYPTION_KEY` as a 32-byte base64 Cloudflare
+  secret. Never commit or log its value.
+- Coinbase keys entered in Settings are encrypted with AES-GCM before storage,
+  isolated by authenticated user, and never returned to the browser.
+- Start with Coinbase **View** permission. The server rejects **Transfer**
+  permission; **Trade** remains inert while real trading is locked.
 - Do not enable automatic order execution until signal backtesting, alert
   auditing, and explicit risk limits are complete.

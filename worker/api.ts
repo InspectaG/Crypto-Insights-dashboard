@@ -7,7 +7,12 @@ import {
 } from "../lib/paper-trading";
 import { minimumConfidenceForRisk } from "../lib/risk-controls";
 import { runAutomation } from "./automation";
-import { getCoinbaseStatus } from "./coinbase";
+import { getCoinbaseStatus, validateCoinbaseCredentials } from "./coinbase";
+import {
+  deleteCoinbaseCredentials,
+  normalizeCoinbaseCredentials,
+  saveCoinbaseCredentials,
+} from "./coinbase-credentials";
 import { fetchMarketData } from "./intelligence";
 import { buildPerformance } from "./performance";
 import {
@@ -47,6 +52,11 @@ async function body(request: Request) {
 
 function pricesFromMarket(market: Awaited<ReturnType<typeof fetchMarketData>>) {
   return Object.fromEntries(market.map((asset) => [asset.symbol, asset.price])) as PaperPrices;
+}
+
+function safeCredentialWrite(request: Request) {
+  const origin = request.headers.get("Origin");
+  return !origin || origin === new URL(request.url).origin;
 }
 
 async function controlPlane(env: WorkerEnv, user: AppUser) {
@@ -226,6 +236,39 @@ export async function handleApi(request: Request, env: WorkerEnv) {
     }
     if (request.method === "GET" && url.pathname === "/api/coinbase/status") {
       return json(await getCoinbaseStatus(env, user.id));
+    }
+    if (request.method === "PUT" && url.pathname === "/api/coinbase/credentials") {
+      if (!safeCredentialWrite(request)) return json({ error: "Invalid request origin" }, { status: 403 });
+      if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
+        return json({ error: "JSON request required" }, { status: 415 });
+      }
+      if (Number(request.headers.get("Content-Length") ?? 0) > 20_000) {
+        return json({ error: "Credential payload is too large" }, { status: 413 });
+      }
+      if (!env.COINBASE_CREDENTIALS_ENCRYPTION_KEY) {
+        return json({ error: "Secure credential storage is not configured" }, { status: 503 });
+      }
+      try {
+        const credentials = normalizeCoinbaseCredentials(await body(request));
+        await validateCoinbaseCredentials(user.displayName, credentials);
+        await saveCoinbaseCredentials(
+          env.DB,
+          env.COINBASE_CREDENTIALS_ENCRYPTION_KEY,
+          user.id,
+          credentials,
+        );
+        return json({ ok: true, coinbase: await getCoinbaseStatus(env, user.id) });
+      } catch (error) {
+        return json(
+          { error: error instanceof Error ? error.message : "Coinbase validation failed" },
+          { status: 400 },
+        );
+      }
+    }
+    if (request.method === "DELETE" && url.pathname === "/api/coinbase/credentials") {
+      if (!safeCredentialWrite(request)) return json({ error: "Invalid request origin" }, { status: 403 });
+      await deleteCoinbaseCredentials(env.DB, user.id);
+      return json({ ok: true, coinbase: await getCoinbaseStatus(env, user.id) });
     }
     if (request.method === "GET" && url.pathname === "/api/health") {
       return json({ ok: true, database: "connected", realTradingEnabled: false });

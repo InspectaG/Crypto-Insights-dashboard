@@ -1,4 +1,8 @@
 import type { AppUserId, WorkerEnv } from "./types";
+import {
+  loadCoinbaseCredentials,
+  type CoinbaseCredentials,
+} from "./coinbase-credentials";
 
 const COINBASE_HOST = "api.coinbase.com";
 
@@ -110,8 +114,6 @@ async function coinbaseJwt(keyName: string, privateKeyPem: string, method: strin
   return `${input}.${base64Url(rawSignature(new Uint8Array(signed)))}`;
 }
 
-type CoinbaseCredentials = { keyName?: string; privateKey?: string };
-
 async function coinbaseGet<T>(credentials: CoinbaseCredentials, path: string) {
   if (!credentials.keyName || !credentials.privateKey) {
     throw new Error("Coinbase credentials are not configured");
@@ -133,11 +135,22 @@ async function coinbaseGet<T>(credentials: CoinbaseCredentials, path: string) {
   return response.json() as Promise<T>;
 }
 
-async function getCoinbaseConnection(label: string, credentials: CoinbaseCredentials) {
+type ConnectionMetadata = {
+  keyHint?: string;
+  updatedAt?: string;
+  verifiedAt?: string | null;
+};
+
+async function getCoinbaseConnection(
+  label: string,
+  credentials: Partial<CoinbaseCredentials>,
+  metadata: ConnectionMetadata = {},
+) {
   const configured = Boolean(credentials.keyName && credentials.privateKey);
   if (!configured) {
     return {
       label,
+      ...metadata,
       configured: false,
       connected: false,
       mode: "disconnected",
@@ -148,6 +161,10 @@ async function getCoinbaseConnection(label: string, credentials: CoinbaseCredent
       message: "Add a Coinbase CDP key with View permission only to begin read-only validation.",
     };
   }
+  const completeCredentials: CoinbaseCredentials = {
+    keyName: credentials.keyName!,
+    privateKey: credentials.privateKey!,
+  };
 
   try {
     const [permissions, accounts] = await Promise.all([
@@ -155,35 +172,41 @@ async function getCoinbaseConnection(label: string, credentials: CoinbaseCredent
         can_view: boolean;
         can_trade: boolean;
         can_transfer: boolean;
-      }>(credentials, "/api/v3/brokerage/key_permissions"),
-      coinbaseGet<{ accounts?: unknown[] }>(credentials, "/api/v3/brokerage/accounts"),
+        can_receive: boolean;
+      }>(completeCredentials, "/api/v3/brokerage/key_permissions"),
+      coinbaseGet<{ accounts?: unknown[] }>(completeCredentials, "/api/v3/brokerage/accounts"),
     ]);
-    const unsafeScope = permissions.can_trade || permissions.can_transfer;
+    const elevatedScope = permissions.can_trade || permissions.can_transfer;
     return {
       label,
+      ...metadata,
       configured: true,
       connected: permissions.can_view,
-      mode: unsafeScope ? "scope_review" : "read_only",
+      mode: permissions.can_transfer ? "scope_review" : permissions.can_trade ? "trade_locked" : "read_only",
       accountCount: accounts.accounts?.length ?? 0,
       permissions: {
         canView: permissions.can_view,
         canTrade: permissions.can_trade,
         canTransfer: permissions.can_transfer,
+        canReceive: permissions.can_receive,
       },
       realTradingEnabled: false,
       killSwitch: true,
-      message: unsafeScope
-        ? "The key has Trade or Transfer scope. Remove those permissions during paper validation."
+      message: permissions.can_transfer
+        ? "Transfer permission is not allowed. Replace this key with Transfer disabled."
+        : elevatedScope
+          ? "Trade permission verified. Real order submission remains locked."
         : "Read-only Coinbase connection verified. Real order submission remains unavailable.",
     };
   } catch (error) {
     return {
       label,
+      ...metadata,
       configured: true,
       connected: false,
       mode: "error",
       accountCount: 0,
-      permissions: { canView: false, canTrade: false, canTransfer: false },
+      permissions: { canView: false, canTrade: false, canTransfer: false, canReceive: false },
       realTradingEnabled: false,
       killSwitch: true,
       message: error instanceof Error ? error.message : "Coinbase validation failed",
@@ -191,24 +214,62 @@ async function getCoinbaseConnection(label: string, credentials: CoinbaseCredent
   }
 }
 
+export async function validateCoinbaseCredentials(label: string, credentials: CoinbaseCredentials) {
+  const connection = await getCoinbaseConnection(label, credentials);
+  if (!connection.connected) throw new Error(connection.message);
+  if (connection.permissions.canTransfer) {
+    throw new Error("Disable Coinbase Transfer permission before saving this key");
+  }
+  return connection;
+}
+
 export async function getCoinbaseStatus(env: WorkerEnv, userId: AppUserId) {
-  const connection = userId === "justin"
-    ? await getCoinbaseConnection("Justin", {
-      keyName: env.COINBASE_PRIMARY_API_KEY_NAME ?? env.COINBASE_API_KEY_NAME,
-      privateKey: env.COINBASE_PRIMARY_API_PRIVATE_KEY ?? env.COINBASE_API_PRIVATE_KEY,
-    })
-    : await getCoinbaseConnection("Gatcho", {
-      keyName: env.COINBASE_BROTHER_API_KEY_NAME,
-      privateKey: env.COINBASE_BROTHER_API_PRIVATE_KEY,
-    });
+  const label = userId === "justin" ? "Justin" : "Gatcho";
+  let connection;
+  if (env.COINBASE_CREDENTIALS_ENCRYPTION_KEY) {
+    try {
+      const stored = await loadCoinbaseCredentials(env.DB, env.COINBASE_CREDENTIALS_ENCRYPTION_KEY, userId);
+      connection = stored
+        ? await getCoinbaseConnection(label, stored.credentials, {
+          keyHint: stored.keyHint,
+          updatedAt: stored.updatedAt,
+          verifiedAt: stored.verifiedAt,
+        })
+        : null;
+    } catch {
+      connection = {
+        label,
+        configured: true,
+        connected: false,
+        mode: "error",
+        accountCount: 0,
+        permissions: { canView: false, canTrade: false, canTransfer: false, canReceive: false },
+        realTradingEnabled: false,
+        killSwitch: true,
+        message: "Stored Coinbase credentials could not be decrypted. Replace the connection in Settings.",
+      };
+    }
+  }
+  if (!connection) {
+    connection = userId === "justin"
+      ? await getCoinbaseConnection(label, {
+        keyName: env.COINBASE_PRIMARY_API_KEY_NAME ?? env.COINBASE_API_KEY_NAME,
+        privateKey: env.COINBASE_PRIMARY_API_PRIVATE_KEY ?? env.COINBASE_API_PRIVATE_KEY,
+      })
+      : await getCoinbaseConnection(label, {
+        keyName: env.COINBASE_BROTHER_API_KEY_NAME,
+        privateKey: env.COINBASE_BROTHER_API_PRIVATE_KEY,
+      });
+  }
   const connections = [connection];
   const configured = connections.some((connection) => connection.configured);
   const connected = connections.some((connection) => connection.connected);
-  const unsafeScope = connections.some((connection) => connection.permissions.canTrade || connection.permissions.canTransfer);
+  const hasTransferScope = connections.some((connection) => connection.permissions.canTransfer);
+  const hasTradeScope = connections.some((connection) => connection.permissions.canTrade);
   return {
     configured,
     connected,
-    mode: unsafeScope ? "scope_review" : connected ? "read_only" : "disconnected",
+    mode: hasTransferScope ? "scope_review" : hasTradeScope ? "trade_locked" : connected ? "read_only" : "disconnected",
     accountCount: connections.reduce((sum, connection) => sum + connection.accountCount, 0),
     permissions: {
       canView: connections.some((connection) => connection.permissions.canView),
@@ -217,8 +278,10 @@ export async function getCoinbaseStatus(env: WorkerEnv, userId: AppUserId) {
     },
     realTradingEnabled: false as const,
     killSwitch: true as const,
-    message: unsafeScope
-      ? "At least one key has Trade or Transfer scope; remove it during paper validation."
+    message: hasTransferScope
+      ? "Transfer permission is not allowed. Replace this Coinbase key."
+      : hasTradeScope
+        ? "Trade permission is verified, but real order submission remains locked."
       : connected
         ? "Read-only Coinbase validation is active; real order submission remains unavailable."
         : "Your Coinbase account has not been connected yet.",

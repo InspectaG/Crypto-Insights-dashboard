@@ -46,6 +46,9 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Daily investment cap/);
   assert.match(html, /minimum is \$1\/day/i);
   assert.match(html, /One-time paper cash injection/);
+  assert.match(html, /Coinbase connection/);
+  assert.match(html, /Write-only secret/);
+  assert.match(html, /Saving a key does not enable real orders/i);
   assert.match(html, /not financial advice/i);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);
 });

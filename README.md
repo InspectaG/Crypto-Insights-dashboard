@@ -78,12 +78,14 @@ used for real decisions.
 ## Paper-trading boundaries
 
 Paper trades are forward tests and never submit an order to Coinbase. The MVP
-stores its ledger in the current browser, prevents the same signal from being
-traded twice in a 15-minute window, and blocks buys once the configured daily
-limit is spent. It waits for at least ten closed trades before proposing a
-single threshold experiment; it does not silently rewrite strategy rules.
+stores a separate Cloudflare D1 ledger for each authenticated user, prevents
+the same signal from being traded twice in a 15-minute window, and blocks buys
+once the configured daily limit is spent. It waits for at least ten closed
+trades before proposing a single threshold experiment; it does not silently
+rewrite strategy rules.
 
-A shared, cross-device paper ledger should use an authenticated database after
-Cloudflare Access is active. Real trading remains a separate milestone and
-requires exchange-side permissions, independent server-side limits, a kill
+Each user may add a separate Coinbase CDP key in Settings. The server validates
+the key, rejects Transfer permission, and stores the credential as an AES-GCM
+encrypted D1 record that is never returned to the browser. Real trading remains
+a separate milestone and requires independent server-side limits, a kill
 switch, and explicit deployment approval.
