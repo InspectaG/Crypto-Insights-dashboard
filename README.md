@@ -1,1 +1,1 @@
-# Crypto-Insights
+# Crypto-Insights-Dashboard
