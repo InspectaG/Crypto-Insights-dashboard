@@ -44,6 +44,14 @@ type Asset = {
   bars: number[];
 };
 
+type MarketFeed = {
+  status: "loading" | "live" | "stale" | "unavailable";
+  source: string;
+  asOf: string | null;
+  refreshSeconds: number;
+  message: string;
+};
+
 type FeedEvent = {
   id: string;
   source: "WHALE" | "SOCIAL" | "MARKET" | "NEWS";
@@ -160,33 +168,33 @@ type CoinbaseStatus = {
   connections?: CoinbaseConnection[];
 };
 
-const fallbackAssets: Asset[] = [
+const loadingAssets: Asset[] = [
   {
     symbol: "BTC",
     name: "Bitcoin",
-    price: "$116,842",
-    change: "+3.84%",
-    volume: "$48.2B vol",
-    bias: "bullish" as Bias,
-    bars: [32, 42, 36, 51, 47, 60, 58, 72, 68, 84, 79, 92],
+    price: "—",
+    change: "WAITING",
+    volume: "No verified quote",
+    bias: "neutral" as Bias,
+    bars: Array(12).fill(8),
   },
   {
     symbol: "ETH",
     name: "Ethereum",
-    price: "$4,284",
-    change: "+2.17%",
-    volume: "$22.7B vol",
-    bias: "bullish" as Bias,
-    bars: [40, 45, 38, 49, 54, 51, 60, 64, 57, 67, 73, 76],
+    price: "—",
+    change: "WAITING",
+    volume: "No verified quote",
+    bias: "neutral" as Bias,
+    bars: Array(12).fill(8),
   },
   {
     symbol: "SOL",
     name: "Solana",
-    price: "$188.41",
-    change: "−1.26%",
-    volume: "$5.8B vol",
-    bias: "bearish" as Bias,
-    bars: [78, 72, 81, 68, 73, 62, 66, 57, 61, 48, 52, 43],
+    price: "—",
+    change: "WAITING",
+    volume: "No verified quote",
+    bias: "neutral" as Bias,
+    bars: Array(12).fill(8),
   },
 ];
 
@@ -303,6 +311,13 @@ function relativeTime(iso: string) {
   return `${Math.floor(hours / 24)}d`;
 }
 
+function marketTime(iso: string | null) {
+  if (!iso) return "No verified quote received";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "Quote time unavailable";
+  return `Updated ${value.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+}
+
 function money(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -330,8 +345,14 @@ function confidenceMeaning(band: ConfidenceBand) {
 export default function Home() {
   const [filter, setFilter] = useState<"all" | Bias>("all");
   const [activeAsset, setActiveAsset] = useState<PaperSymbol>("BTC");
-  const [assetData, setAssetData] = useState(fallbackAssets);
-  const [marketSource, setMarketSource] = useState<"live" | "fallback">("fallback");
+  const [assetData, setAssetData] = useState(loadingAssets);
+  const [marketFeed, setMarketFeed] = useState<MarketFeed>({
+    status: "loading",
+    source: "Coinbase Exchange",
+    asOf: null,
+    refreshSeconds: 30,
+    message: "Requesting validated BTC, ETH, and SOL quotes.",
+  });
   const [paperAccount, setPaperAccount] = useState(() => createPaperAccount());
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [comparison, setComparison] = useState<ComparisonProfile[]>([]);
@@ -402,6 +423,7 @@ export default function Home() {
           symbol: PaperSymbol; name: string; priceLabel: string; changeLabel: string;
           volumeLabel: string; bias: Bias; bars: number[];
         }>;
+        marketFeed?: Omit<MarketFeed, "status"> & { status: "live" | "stale" };
         signals?: Array<SignalProfile & { symbol: PaperSymbol }>;
         events?: FeedEvent[];
         alerts?: DashboardAlert[];
@@ -428,8 +450,8 @@ export default function Home() {
           bias: asset.bias,
           bars: asset.bars,
         })));
-        setMarketSource("live");
       }
+      if (payload.marketFeed) setMarketFeed(payload.marketFeed);
       if (payload.signals?.length) {
         const nextProfiles: Record<PaperSymbol, SignalProfile> = { ...signalProfiles };
         for (const signal of payload.signals) nextProfiles[signal.symbol] = signal;
@@ -447,6 +469,13 @@ export default function Home() {
     } catch (error) {
       setPaperMessage(error instanceof Error ? error.message : "Dashboard sync failed");
       setPaperSettingsStatus("error");
+      setMarketFeed((current) => ({
+        ...current,
+        status: current.asOf ? "stale" : "unavailable",
+        message: current.asOf
+          ? "Price refresh failed; retaining the last verified quote with a stale warning."
+          : "Coinbase market data is temporarily unavailable. No placeholder prices are shown.",
+      }));
     } finally {
       if (showProgress) setSyncing(false);
     }
@@ -454,7 +483,7 @@ export default function Home() {
 
   useEffect(() => {
     const initial = window.setTimeout(() => void syncControlPlane(), 0);
-    const refresh = window.setInterval(() => void syncControlPlane(), 60_000);
+    const refresh = window.setInterval(() => void syncControlPlane(), 30_000);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(refresh);
@@ -659,7 +688,11 @@ export default function Home() {
         </a>
         <div className="topbarRight">
           <span className="demoPill">
-            {marketSource === "live" ? "LIVE SOURCES · PAPER ONLY" : "CONNECTING LIVE SOURCES"}
+            {marketFeed.status === "live"
+              ? "LIVE COINBASE · PAPER ONLY"
+              : marketFeed.status === "stale"
+                ? "STALE PRICES · PAPER ONLY"
+                : "CONNECTING PRICE FEED"}
           </span>
           <span className="status"><i /> SYSTEM ONLINE</span>
           {/* Full-page navigation avoids an unreliable client-router transition on the hosted build. */}
@@ -686,6 +719,30 @@ export default function Home() {
           <strong><i /> RISK-ON</strong>
           <small>Confidence 72%</small>
         </div>
+      </section>
+
+      <section className={`marketFeedBar ${marketFeed.status}`} aria-live="polite">
+        <div className="marketFeedIdentity">
+          <span><i /> {
+            marketFeed.status === "live"
+              ? "LIVE PRICE FEED"
+              : marketFeed.status === "stale"
+                ? "STALE — LAST VERIFIED"
+                : marketFeed.status === "unavailable"
+                  ? "PRICE FEED UNAVAILABLE"
+                  : "CONNECTING"
+          }</span>
+          <small>{marketFeed.source} · {marketTime(marketFeed.asOf)} · USD spot</small>
+        </div>
+        <p>{marketFeed.message} Prices refresh every {marketFeed.refreshSeconds} seconds.</p>
+        <button
+          className="marketRefresh"
+          type="button"
+          onClick={() => void syncControlPlane(true)}
+          disabled={syncing}
+        >
+          {syncing ? "Refreshing…" : "Refresh prices"}
+        </button>
       </section>
 
       <section className="assetGrid" aria-label="Asset overview">

@@ -38,7 +38,11 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Confidence anatomy/i);
   assert.match(html, /Confidence measures evidence agreement/i);
   assert.match(html, /Signal feed/);
-  assert.match(html, /CONNECTING LIVE SOURCES/);
+  assert.match(html, /CONNECTING PRICE FEED/);
+  assert.match(html, /Coinbase Exchange/);
+  assert.match(html, /No verified quote received/);
+  assert.match(html, /Refresh prices/);
+  assert.doesNotMatch(html, /\$116,842|\$4,284|\$188\.41/);
   assert.match(html, /Verifying account/);
   assert.match(html, /Checking Google identity/);
   assert.doesNotMatch(html, />Justin</);

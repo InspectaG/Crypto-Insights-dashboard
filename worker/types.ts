@@ -53,6 +53,7 @@ export interface WorkerExecutionContext {
 export type MarketAsset = {
   symbol: PaperSymbol;
   name: string;
+  productId: `${PaperSymbol}-USD`;
   price: number;
   priceLabel: string;
   changePct: number;
@@ -61,6 +62,9 @@ export type MarketAsset = {
   volumeLabel: string;
   bias: "bullish" | "bearish" | "neutral";
   bars: number[];
+  source: string;
+  observedAt: string;
+  status: "live" | "stale";
 };
 
 export type IntelligenceEvent = {

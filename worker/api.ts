@@ -13,7 +13,7 @@ import {
   normalizeCoinbaseCredentials,
   saveCoinbaseCredentials,
 } from "./coinbase-credentials";
-import { fetchMarketData } from "./intelligence";
+import { fetchMarketData } from "./market";
 import { buildPerformance, buildSignalValidation } from "./performance";
 import {
   createAlert,
@@ -23,6 +23,7 @@ import {
   latestAutomationRun,
   loadAlerts,
   loadLatestSignals,
+  loadLatestMarketData,
   loadPaperAccount,
   loadRecentEvents,
   markAlertsRead,
@@ -54,6 +55,34 @@ function pricesFromMarket(market: Awaited<ReturnType<typeof fetchMarketData>>) {
   return Object.fromEntries(market.map((asset) => [asset.symbol, asset.price])) as PaperPrices;
 }
 
+function marketFeed(market: Awaited<ReturnType<typeof fetchMarketData>>) {
+  const timestamps = market
+    .map((asset) => new Date(asset.observedAt).getTime())
+    .filter(Number.isFinite);
+  const asOf = timestamps.length ? new Date(Math.min(...timestamps)).toISOString() : null;
+  const status = market.every((asset) => asset.status === "live") ? "live" : "stale";
+  return {
+    status,
+    source: [...new Set(market.map((asset) => asset.source))].join(" + ") || "Coinbase Exchange",
+    asOf,
+    refreshSeconds: 30,
+    message: status === "live"
+      ? "Validated Coinbase ticker quotes with 24-hour Exchange statistics."
+      : "Coinbase is temporarily unavailable; showing the last recorded market snapshot.",
+  };
+}
+
+async function dashboardMarket(env: WorkerEnv) {
+  try {
+    const market = await fetchMarketData();
+    return { market, feed: marketFeed(market) };
+  } catch (upstreamError) {
+    const market = await loadLatestMarketData(env.DB);
+    if (market.length !== 3) throw upstreamError;
+    return { market, feed: marketFeed(market) };
+  }
+}
+
 function safeCredentialWrite(request: Request) {
   const origin = request.headers.get("Origin");
   return !origin || origin === new URL(request.url).origin;
@@ -66,7 +95,7 @@ async function controlPlane(env: WorkerEnv, user: AppUser) {
     await runAutomation(env);
     signals = await loadLatestSignals(env.DB);
   }
-  const market = await fetchMarketData();
+  const { market, feed } = await dashboardMarket(env);
   const prices = pricesFromMarket(market);
   const account = await loadPaperAccount(env.DB, user.accountId);
   const [events, alerts, automation, coinbase, autoPaperEnabled, paperStartingCash, performance, validation] = await Promise.all([
@@ -104,6 +133,7 @@ async function controlPlane(env: WorkerEnv, user: AppUser) {
     user: { id: user.id, email: user.email, displayName: user.displayName },
     paperAccount: account,
     market,
+    marketFeed: feed,
     signals,
     events,
     alerts,
@@ -188,7 +218,7 @@ export async function handleApi(request: Request, env: WorkerEnv) {
       return controlPlane(env, user);
     }
     if (request.method === "GET" && url.pathname === "/api/market") {
-      const market = await fetchMarketData();
+      const { market, feed } = await dashboardMarket(env);
       return json({
         assets: market.map((asset) => ({
           symbol: asset.symbol,
@@ -199,8 +229,7 @@ export async function handleApi(request: Request, env: WorkerEnv) {
           bias: asset.bias,
           bars: asset.bars,
         })),
-        source: "Coinbase Exchange",
-        asOf: new Date().toISOString(),
+        ...feed,
       }, { headers: { "Cache-Control": "private, max-age=30" } });
     }
     if (request.method === "POST" && url.pathname === "/api/paper/trade") {

@@ -14,6 +14,7 @@ import {
 import { paperStartingCashSettingKey } from "../lib/paper-settings";
 import type { AlertRecord, D1Database, IntelligenceEvent, LiveSignal, MarketAsset } from "./types";
 import { appUsers } from "./access";
+import { formatMarketPrice, formatMarketVolume, marketProduct } from "./market";
 
 const symbols: PaperSymbol[] = ["BTC", "ETH", "SOL"];
 let schemaReady: Promise<void> | null = null;
@@ -278,8 +279,16 @@ export async function saveIngestion(
       db.prepare(
         `INSERT OR IGNORE INTO market_snapshots
           (id, symbol, price, change_pct, volume_usd, source, captured_at)
-         VALUES (?, ?, ?, ?, ?, 'Coinbase Exchange', ?)`,
-      ).bind(`${capturedAt}:${asset.symbol}`, asset.symbol, asset.price, asset.changePct, asset.volumeUsd, capturedAt),
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        `${capturedAt}:${asset.symbol}`,
+        asset.symbol,
+        asset.price,
+        asset.changePct,
+        asset.volumeUsd,
+        asset.source,
+        capturedAt,
+      ),
     ),
     ...events.map((event) =>
       db.prepare(
@@ -320,6 +329,48 @@ export async function saveIngestion(
     ),
   ];
   if (statements.length) await db.batch(statements);
+}
+
+export async function loadLatestMarketData(db: D1Database): Promise<MarketAsset[]> {
+  await ensureDatabase(db);
+  const rows = await db.prepare(
+    `SELECT snapshot.symbol, snapshot.price, snapshot.change_pct, snapshot.volume_usd,
+      snapshot.source, snapshot.captured_at
+     FROM market_snapshots snapshot
+     WHERE snapshot.id = (
+       SELECT candidate.id FROM market_snapshots candidate
+       WHERE candidate.symbol = snapshot.symbol
+       ORDER BY candidate.captured_at DESC LIMIT 1
+     )`,
+  ).all<{
+    symbol: PaperSymbol;
+    price: number;
+    change_pct: number;
+    volume_usd: number;
+    source: string;
+    captured_at: string;
+  }>();
+
+  return rows.results.flatMap((row) => {
+    const product = marketProduct(row.symbol);
+    if (!product || !Number.isFinite(row.price) || row.price <= 0) return [];
+    return [{
+      symbol: product.symbol,
+      name: product.name,
+      productId: product.productId,
+      price: row.price,
+      priceLabel: formatMarketPrice(row.price),
+      changePct: row.change_pct,
+      changeLabel: `${row.change_pct >= 0 ? "+" : "−"}${Math.abs(row.change_pct).toFixed(2)}%`,
+      volumeUsd: row.volume_usd,
+      volumeLabel: formatMarketVolume(row.volume_usd),
+      bias: row.change_pct > 0.25 ? "bullish" : row.change_pct < -0.25 ? "bearish" : "neutral",
+      bars: product.bars,
+      source: row.source,
+      observedAt: row.captured_at,
+      status: "stale",
+    } satisfies MarketAsset];
+  }).sort((left, right) => symbols.indexOf(left.symbol) - symbols.indexOf(right.symbol));
 }
 
 export async function evaluateMatureSignals(

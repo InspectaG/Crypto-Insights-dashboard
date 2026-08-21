@@ -7,8 +7,10 @@ before paid data vendors or automated trading are introduced.
 
 ## MVP capabilities
 
-- Live BTC, ETH, and SOL price, 24-hour change, and volume snapshots from the
-  public Coinbase Exchange product statistics endpoint.
+- Live BTC, ETH, and SOL last-trade prices from the Coinbase Exchange ticker,
+  cross-checked against best bid/ask and paired with 24-hour statistics.
+- Automatic 30-second price refresh, a manual refresh control, and visible
+  source, quote time, and live/stale status.
 - Explainable signal direction, confidence, horizon, evidence, and invalidation.
 - Low, moderate, and high confidence bands with per-source scoring and an explicit
   distinction between evidence agreement and probability of profit.
@@ -18,7 +20,8 @@ before paid data vendors or automated trading are introduced.
 - Simulated execution drag, open-position mark-to-market results, realized P/L,
   win rate, profit factor, and a controlled strategy-review loop.
 - Responsive, keyboard-accessible dashboard UI.
-- Deterministic fallback data when the upstream market feed is unavailable.
+- Explicit last-recorded-price fallback when Coinbase is unavailable. The UI
+  labels these values stale and never substitutes hardcoded demo prices.
 - Search-engine exclusion metadata and an explicit simulated-data indicator.
 - Cloudflare Access deployment plan restricted to exactly two Google accounts.
 
@@ -74,7 +77,7 @@ deployment and verification checklist.
 
 | Surface | MVP source | Status |
 | --- | --- | --- |
-| Price and volume | Coinbase Exchange public REST API | Live with fallback |
+| Price and volume | Coinbase Exchange ticker + 24-hour stats | Live with labeled last-recorded fallback |
 | News sentiment | Representative event fixtures | Simulated |
 | Social velocity | Representative event fixtures | Simulated |
 | Whale activity | Representative event fixtures | Simulated |

@@ -65,6 +65,18 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .marketRegime strong { color: var(--green); font-size: 15px; letter-spacing: .08em; }
 .marketRegime strong i { background: var(--green); border-radius: 50%; display: inline-block; height: 7px; margin-right: 8px; width: 7px; }
 
+.marketFeedBar { align-items: center; background: rgba(12,18,30,.78); border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 18px; grid-template-columns: minmax(245px, auto) 1fr auto; margin-bottom: 12px; min-height: 62px; padding: 11px 14px; }
+.marketFeedIdentity span, .marketFeedIdentity small { display: block; font-family: var(--font-geist-mono); }
+.marketFeedIdentity span { color: var(--green); font-size: 8px; letter-spacing: .12em; }
+.marketFeedIdentity span i { background: var(--green); border-radius: 50%; box-shadow: 0 0 8px rgba(99,230,190,.7); display: inline-block; height: 6px; margin-right: 7px; width: 6px; }
+.marketFeedIdentity small { color: #65718a; font-size: 8px; margin-top: 5px; }
+.marketFeedBar p { color: #77839a; font-size: 9px; line-height: 1.5; margin: 0; }
+.marketFeedBar.stale { border-color: rgba(246,198,91,.25); }.marketFeedBar.stale .marketFeedIdentity span { color: var(--amber); }.marketFeedBar.stale .marketFeedIdentity span i { background: var(--amber); box-shadow: 0 0 8px rgba(246,198,91,.55); }
+.marketFeedBar.unavailable { border-color: rgba(255,123,134,.25); }.marketFeedBar.unavailable .marketFeedIdentity span { color: var(--red); }.marketFeedBar.unavailable .marketFeedIdentity span i { background: var(--red); box-shadow: none; }
+.marketFeedBar.loading .marketFeedIdentity span { color: var(--blue); }.marketFeedBar.loading .marketFeedIdentity span i { background: var(--blue); box-shadow: 0 0 8px rgba(122,162,255,.55); }
+.marketRefresh { background: #111a2a; border: 1px solid #2a3852; border-radius: 6px; color: #aebbd1; cursor: pointer; font-family: var(--font-geist-mono); font-size: 8px; padding: 8px 10px; white-space: nowrap; }
+.marketRefresh:hover { border-color: rgba(122,162,255,.55); color: #edf3ff; }.marketRefresh:disabled { cursor: wait; opacity: .55; }
+
 .assetGrid { display: grid; gap: 12px; grid-template-columns: repeat(3, 1fr); margin-bottom: 12px; }
 .assetCard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; padding: 18px; text-align: left; transition: .18s ease; }
 .assetCard:hover, .assetCard.active { background: var(--panel-hover); border-color: rgba(122,162,255,.38); transform: translateY(-1px); }
@@ -77,7 +89,7 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .assetBadges { align-items: flex-end; display: flex; flex-direction: column; gap: 6px; }
 .assetHead .assetBadges span { margin-top: 0; }
 .change { border-radius: 4px; font-family: var(--font-geist-mono); font-size: 10px; padding: 5px 7px; }
-.change.bullish { background: rgba(99,230,190,.08); color: var(--green); }.change.bearish { background: rgba(255,123,134,.08); color: var(--red); }
+.change.bullish { background: rgba(99,230,190,.08); color: var(--green); }.change.bearish { background: rgba(255,123,134,.08); color: var(--red); }.change.neutral { background: rgba(122,162,255,.07); color: #8091b3; }
 .assetConfidence { border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-geist-mono); font-size: 7px !important; letter-spacing: .08em; padding: 4px 6px; }
 .assetConfidence.high { background: rgba(99,230,190,.06); border-color: rgba(99,230,190,.15); color: var(--green) !important; }
 .assetConfidence.moderate { background: rgba(246,198,91,.06); border-color: rgba(246,198,91,.15); color: var(--amber) !important; }
@@ -274,6 +286,7 @@ footer .appVersion { margin-left: auto; white-space: nowrap; }
 @media (max-width: 900px) {
   .shell { padding-inline: 22px; }
   .assetGrid { grid-template-columns: 1fr; }
+  .marketFeedBar { grid-template-columns: 1fr auto; }.marketFeedBar p { grid-column: 1 / -1; grid-row: 2; }
   .dashboardGrid { grid-template-columns: 1fr; }
   .paperMetrics { grid-template-columns: repeat(2, 1fr); }
   .paperGrid { grid-template-columns: 1fr; }
@@ -293,6 +306,7 @@ footer .appVersion { margin-left: auto; white-space: nowrap; }
   .settingsLink { display: none; }
   .accountSwitch { display: none; }
   .hero { padding-top: 38px; }
+  .marketFeedBar { align-items: stretch; grid-template-columns: 1fr; }.marketFeedBar p { grid-column: auto; grid-row: auto; }.marketRefresh { width: 100%; }
   .signalPanel, .scorePanel { padding: 18px; }
   .confidenceDial { height: 88px; width: 88px; }
   .dialValue { font-size: 21px; }

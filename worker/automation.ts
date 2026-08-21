@@ -4,7 +4,8 @@ import {
   todayBuySpend,
   type PaperPrices,
 } from "../lib/paper-trading";
-import { buildSignals, fetchIntelligence, fetchMarketData } from "./intelligence";
+import { buildSignals, fetchIntelligence } from "./intelligence";
+import { fetchMarketData } from "./market";
 import {
   createAlert,
   ensureDatabase,

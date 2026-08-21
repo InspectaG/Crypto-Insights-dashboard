@@ -1,38 +1,6 @@
 import type { PaperSymbol } from "../lib/paper-trading";
 import type { IntelligenceEvent, LiveSignal, MarketAsset } from "./types";
 
-const products: Array<{
-  symbol: PaperSymbol;
-  name: string;
-  productId: string;
-  bars: number[];
-}> = [
-  {
-    symbol: "BTC",
-    name: "Bitcoin",
-    productId: "BTC-USD",
-    bars: [32, 42, 36, 51, 47, 60, 58, 72, 68, 84, 79, 92],
-  },
-  {
-    symbol: "ETH",
-    name: "Ethereum",
-    productId: "ETH-USD",
-    bars: [40, 45, 38, 49, 54, 51, 60, 64, 57, 67, 73, 76],
-  },
-  {
-    symbol: "SOL",
-    name: "Solana",
-    productId: "SOL-USD",
-    bars: [78, 72, 81, 68, 73, 62, 66, 57, 61, 48, 52, 43],
-  },
-];
-
-type CoinbaseStats = {
-  open: string;
-  volume: string;
-  last: string;
-};
-
 type FeedItem = {
   title: string;
   link: string | null;
@@ -50,20 +18,6 @@ const negativeWords = [
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
-}
-
-function formatPrice(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: value < 1_000 ? 2 : 0,
-    maximumFractionDigits: value < 1_000 ? 2 : 0,
-  }).format(value);
-}
-
-function formatVolume(value: number) {
-  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B vol`;
-  return `$${(value / 1_000_000).toFixed(1)}M vol`;
 }
 
 function decodeXml(value: string) {
@@ -127,40 +81,6 @@ function detectAsset(text: string): PaperSymbol | "MARKET" {
 
 function biasFromSentiment(value: number): IntelligenceEvent["bias"] {
   return value > 0 ? "bullish" : value < 0 ? "bearish" : "neutral";
-}
-
-export async function fetchMarketData(): Promise<MarketAsset[]> {
-  return Promise.all(products.map(async (product) => {
-    const response = await fetch(
-      `https://api.exchange.coinbase.com/products/${product.productId}/stats`,
-      {
-        headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-        cf: { cacheTtl: 30, cacheEverything: true },
-      } as RequestInit,
-    );
-    if (!response.ok) throw new Error(`Coinbase market feed returned ${response.status}`);
-    const stats = await response.json() as CoinbaseStats;
-    const open = Number(stats.open);
-    const price = Number(stats.last);
-    const baseVolume = Number(stats.volume);
-    if (![open, price, baseVolume].every(Number.isFinite) || open <= 0 || price <= 0) {
-      throw new Error("Coinbase market feed returned invalid values");
-    }
-    const changePct = ((price - open) / open) * 100;
-    const volumeUsd = price * baseVolume;
-    return {
-      symbol: product.symbol,
-      name: product.name,
-      price,
-      priceLabel: formatPrice(price),
-      changePct,
-      changeLabel: `${changePct >= 0 ? "+" : "−"}${Math.abs(changePct).toFixed(2)}%`,
-      volumeUsd,
-      volumeLabel: formatVolume(volumeUsd),
-      bias: changePct > 0.25 ? "bullish" : changePct < -0.25 ? "bearish" : "neutral",
-      bars: product.bars,
-    } satisfies MarketAsset;
-  }));
 }
 
 async function fetchFeed(url: string) {
