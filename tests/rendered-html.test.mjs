@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render(path = "/") {
@@ -63,6 +64,18 @@ test("keeps Coinbase credentials on a separate settings page", async () => {
   assert.match(html, /ECDSA private key/);
   assert.match(html, /Write-only secret/);
   assert.match(html, /BACK TO DASHBOARD/);
+});
+
+test("uses full-page links between the dashboard and settings", async () => {
+  const [dashboardSource, settingsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/settings/page.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(dashboardSource, /<a className="settingsLink" href="\/settings">/);
+  assert.match(dashboardSource, /<a className="manageConnection" href="\/settings">/);
+  assert.match(settingsSource, /<a className="backLink" href="\/">/);
+  assert.doesNotMatch(`${dashboardSource}\n${settingsSource}`, /from "next\/link"|<Link\b/);
 });
 
 test("keeps private-dashboard metadata out of search indexes", async () => {

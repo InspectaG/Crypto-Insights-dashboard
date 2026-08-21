@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
 
 type Viewer = { id: "justin" | "gatcho"; email: string; displayName: string };
 
@@ -117,14 +116,14 @@ export default function CoinbaseSettings() {
   return (
     <main className="shell settingsShell">
       <header className="topbar">
-        <Link className="brand" href="/" aria-label="Return to Gatchek Signals dashboard">
+        <a className="brand" href="/" aria-label="Return to Gatchek Signals dashboard">
           <span className="brandMark">G</span>
           <span>GATCHEK <b>/ SETTINGS</b></span>
-        </Link>
+        </a>
         <div className="topbarRight">
           <span className="demoPill">PRIVATE CONNECTION SETTINGS</span>
           <span className="viewerName">{viewer.displayName}</span>
-          <Link className="backLink" href="/">BACK TO DASHBOARD</Link>
+          <a className="backLink" href="/">BACK TO DASHBOARD</a>
         </div>
       </header>
 

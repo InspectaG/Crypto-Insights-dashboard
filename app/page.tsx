@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   createPaperAccount,
   learningSummary,
@@ -590,7 +589,7 @@ export default function Home() {
             {marketSource === "live" ? "LIVE SOURCES · PAPER ONLY" : "CONNECTING LIVE SOURCES"}
           </span>
           <span className="status"><i /> SYSTEM ONLINE</span>
-          <Link className="settingsLink" href="/settings">SETTINGS</Link>
+          <a className="settingsLink" href="/settings">SETTINGS</a>
           <span className="viewerName">{viewer.displayName}</span>
           <button className="avatar" aria-label={`${viewer.displayName} account`}>
             {viewer.displayName.slice(0, 2).toUpperCase()}
@@ -1128,7 +1127,7 @@ export default function Home() {
               <strong>Kill switch ON · daily real-money limit $0</strong>
               <p>Only read-only account validation exists. There is no real-order route in this build.</p>
             </div>
-            <Link className="manageConnection" href="/settings">Open Coinbase settings →</Link>
+            <a className="manageConnection" href="/settings">Open Coinbase settings →</a>
           </article>
         </div>
       </section>
