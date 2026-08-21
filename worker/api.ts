@@ -14,7 +14,7 @@ import {
   saveCoinbaseCredentials,
 } from "./coinbase-credentials";
 import { fetchMarketData } from "./intelligence";
-import { buildPerformance } from "./performance";
+import { buildPerformance, buildSignalValidation } from "./performance";
 import {
   createAlert,
   depositPaperFunds,
@@ -69,13 +69,14 @@ async function controlPlane(env: WorkerEnv, user: AppUser) {
   const market = await fetchMarketData();
   const prices = pricesFromMarket(market);
   const account = await loadPaperAccount(env.DB, user.accountId);
-  const [events, alerts, automation, coinbase, autoPaperEnabled, performance] = await Promise.all([
+  const [events, alerts, automation, coinbase, autoPaperEnabled, performance, validation] = await Promise.all([
     loadRecentEvents(env.DB),
     loadAlerts(env.DB, user.id),
     latestAutomationRun(env.DB),
     getCoinbaseStatus(env, user.id),
     getSetting(env.DB, `auto_paper_enabled:${user.id}`, "true"),
     buildPerformance(env.DB, user.accountId, account, prices),
+    buildSignalValidation(env.DB),
   ]);
   const comparison = await Promise.all(appUsers.map(async (profile) => {
     const profileAccount = profile.id === user.id ? account : await loadPaperAccount(env.DB, profile.accountId);
@@ -105,6 +106,7 @@ async function controlPlane(env: WorkerEnv, user: AppUser) {
     events,
     alerts,
     performance,
+    validation,
     comparison,
     automation,
     settings: {

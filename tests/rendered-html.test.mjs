@@ -41,6 +41,10 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /CONNECTING LIVE SOURCES/);
   assert.match(html, /Paper autopilot/);
   assert.match(html, /Performance benchmark/);
+  assert.match(html, /Signal evidence scorecard/);
+  assert.match(html, /FORWARD VALIDATION/);
+  assert.match(html, /Every recorded call is automatically checked after 4 and 24 hours/);
+  assert.match(html, /automatic paper buys and sells/i);
   assert.match(html, /TRADING LOCKED/);
   assert.match(html, /Performance comparison/);
   assert.match(html, /Risk tolerance/);

@@ -6,6 +6,11 @@ import {
   type PaperTrade,
   type PaperSymbol,
 } from "../lib/paper-trading";
+import {
+  scoreSignalOutcome,
+  validationHorizons,
+  type SignalEvaluation,
+} from "../lib/signal-validation";
 import type { AlertRecord, D1Database, IntelligenceEvent, LiveSignal, MarketAsset } from "./types";
 import { appUsers } from "./access";
 
@@ -307,6 +312,126 @@ export async function saveIngestion(
     ),
   ];
   if (statements.length) await db.batch(statements);
+}
+
+export async function evaluateMatureSignals(
+  db: D1Database,
+  evaluatedAt: string,
+) {
+  let created = 0;
+  for (const horizonHours of validationHorizons) {
+    const cutoff = new Date(new Date(evaluatedAt).getTime() - horizonHours * 3_600_000).toISOString();
+    const pending = await db.prepare(
+      `SELECT s.id AS signal_id, s.symbol, s.side, s.confidence, s.created_at,
+        entry.price AS entry_price, exit.price AS exit_price,
+        exit.captured_at AS evaluated_at
+       FROM signal_snapshots s
+       INNER JOIN market_snapshots entry ON entry.id = s.id
+       INNER JOIN market_snapshots exit ON exit.id = (
+         SELECT candidate.id FROM market_snapshots candidate
+         WHERE candidate.symbol = s.symbol
+           AND candidate.captured_at >= strftime('%Y-%m-%dT%H:%M:%fZ', unixepoch(s.created_at) + (? * 3600), 'unixepoch')
+           AND candidate.captured_at <= strftime('%Y-%m-%dT%H:%M:%fZ', unixepoch(s.created_at) + (? * 3600) + 5400, 'unixepoch')
+         ORDER BY candidate.captured_at ASC LIMIT 1
+       )
+       LEFT JOIN signal_evaluations e
+         ON e.signal_id = s.id AND e.horizon_hours = ?
+       WHERE e.signal_id IS NULL AND s.created_at <= ?
+       ORDER BY s.created_at ASC LIMIT 200`,
+    ).bind(horizonHours, horizonHours, horizonHours, cutoff).all<{
+      signal_id: string;
+      symbol: PaperSymbol;
+      side: "BUY" | "SELL";
+      confidence: number;
+      created_at: string;
+      entry_price: number;
+      exit_price: number;
+      evaluated_at: string;
+    }>();
+    const statements = pending.results.map((row) => {
+      const outcome = scoreSignalOutcome({
+        signalId: row.signal_id,
+        symbol: row.symbol,
+        side: row.side,
+        confidence: row.confidence,
+        horizonHours,
+        entryPrice: row.entry_price,
+        exitPrice: row.exit_price,
+        signalCreatedAt: row.created_at,
+        evaluatedAt: row.evaluated_at,
+      });
+      return db.prepare(
+        `INSERT OR IGNORE INTO signal_evaluations (
+          signal_id, symbol, side, confidence, horizon_hours, entry_price,
+          exit_price, raw_return_pct, net_return_pct, correct,
+          signal_created_at, evaluated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        outcome.signalId,
+        outcome.symbol,
+        outcome.side,
+        outcome.confidence,
+        outcome.horizonHours,
+        outcome.entryPrice,
+        outcome.exitPrice,
+        outcome.rawReturnPct,
+        outcome.netReturnPct,
+        outcome.correct ? 1 : 0,
+        outcome.signalCreatedAt,
+        outcome.evaluatedAt,
+      );
+    });
+    for (let index = 0; index < statements.length; index += 50) {
+      const batch = statements.slice(index, index + 50);
+      if (batch.length) await db.batch(batch);
+    }
+    created += statements.length;
+  }
+  return created;
+}
+
+export async function getSignalEvaluations(db: D1Database): Promise<SignalEvaluation[]> {
+  const result = await db.prepare(
+    `SELECT signal_id, symbol, side, confidence, horizon_hours, entry_price,
+      exit_price, raw_return_pct, net_return_pct, correct,
+      signal_created_at, evaluated_at
+     FROM signal_evaluations ORDER BY evaluated_at DESC LIMIT 5000`,
+  ).all<{
+    signal_id: string;
+    symbol: PaperSymbol;
+    side: "BUY" | "SELL";
+    confidence: number;
+    horizon_hours: 4 | 24;
+    entry_price: number;
+    exit_price: number;
+    raw_return_pct: number;
+    net_return_pct: number;
+    correct: number;
+    signal_created_at: string;
+    evaluated_at: string;
+  }>();
+  return result.results.map((row) => ({
+    signalId: row.signal_id,
+    symbol: row.symbol,
+    side: row.side,
+    confidence: row.confidence,
+    horizonHours: row.horizon_hours,
+    entryPrice: row.entry_price,
+    exitPrice: row.exit_price,
+    rawReturnPct: row.raw_return_pct,
+    netReturnPct: row.net_return_pct,
+    correct: row.correct === 1,
+    signalCreatedAt: row.signal_created_at,
+    evaluatedAt: row.evaluated_at,
+  }));
+}
+
+export async function getPaperCashFlows(db: D1Database, accountId: string) {
+  const result = await db.prepare(
+    `SELECT amount, kind, created_at FROM paper_cash_flows
+     WHERE account_id = ? ORDER BY created_at ASC LIMIT 1000`,
+  ).bind(accountId).all<{ amount: number; kind: "deposit" | "reset"; created_at: string }>();
+  return result.results;
 }
 
 export async function loadLatestSignals(db: D1Database): Promise<LiveSignal[]> {

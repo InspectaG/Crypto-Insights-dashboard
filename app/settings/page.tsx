@@ -116,6 +116,8 @@ export default function CoinbaseSettings() {
   return (
     <main className="shell settingsShell">
       <header className="topbar">
+        {/* Full-page navigation avoids an unreliable client-router transition on the hosted build. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a className="brand" href="/" aria-label="Return to Gatchek Signals dashboard">
           <span className="brandMark">G</span>
           <span>GATCHEK <b>/ SETTINGS</b></span>
@@ -123,6 +125,7 @@ export default function CoinbaseSettings() {
         <div className="topbarRight">
           <span className="demoPill">PRIVATE CONNECTION SETTINGS</span>
           <span className="viewerName">{viewer.displayName}</span>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a className="backLink" href="/">BACK TO DASHBOARD</a>
         </div>
       </header>

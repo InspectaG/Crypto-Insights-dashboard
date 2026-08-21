@@ -1,12 +1,14 @@
 import {
   executePaperTrade,
   portfolioSnapshot,
+  todayBuySpend,
   type PaperPrices,
 } from "../lib/paper-trading";
 import { buildSignals, fetchIntelligence, fetchMarketData } from "./intelligence";
 import {
   createAlert,
   ensureDatabase,
+  evaluateMatureSignals,
   finishAutomationRun,
   getSetting,
   loadPaperAccount,
@@ -49,6 +51,7 @@ export async function runAutomation(env: WorkerEnv, now = new Date()) {
     const events = await fetchIntelligence(market);
     const signals = buildSignals(market, events);
     await saveIngestion(env.DB, market, events, signals, capturedAt);
+    await evaluateMatureSignals(env.DB, capturedAt);
 
     const prices = Object.fromEntries(market.map((asset) => [asset.symbol, asset.price])) as PaperPrices;
     const tradeIds: string[] = [];
@@ -64,12 +67,16 @@ export async function runAutomation(env: WorkerEnv, now = new Date()) {
           .sort((left, right) => right.confidence - left.confidence);
         for (const signal of candidates) {
           if (signal.side === "SELL" && account.positions[signal.symbol].quantity <= 0) continue;
+          const grossValue = signal.side === "BUY"
+            ? Math.min(account.orderSize, Math.max(0, account.dailyLimit - todayBuySpend(account, now)), account.cash)
+            : account.orderSize;
+          if (grossValue < 0.01) continue;
           const result = executePaperTrade(
             account,
             {
               symbol: signal.symbol,
               side: signal.side,
-              grossValue: account.orderSize,
+              grossValue,
               marketPrice: prices[signal.symbol],
               confidence: signal.confidence,
               rationale: `Scheduled · ${signal.rationale}`,
@@ -88,7 +95,7 @@ export async function runAutomation(env: WorkerEnv, now = new Date()) {
               kind: "paper_trade",
               severity: "action",
               title: `Paper ${result.trade.side.toLowerCase()} simulated for ${result.trade.symbol}`,
-              body: `$${result.trade.grossValue.toFixed(2)} at ${signal.confidence}% confidence. Your limits were enforced.`,
+              body: `$${result.trade.grossValue.toFixed(2)} at ${signal.confidence}% confidence. Your risk, cash, holdings, and daily-buy limit were enforced.`,
               sourceUrl: null,
               readAt: null,
               createdAt: capturedAt,

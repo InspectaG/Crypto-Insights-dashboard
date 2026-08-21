@@ -69,6 +69,40 @@ type ServerPerformance = {
   buyHoldReturnPct: number;
   alphaVsBtcPct: number;
   snapshots: number;
+  executionCosts: number;
+  benchmarkContributions: number;
+};
+
+type ValidationHorizon = {
+  hours: 4 | 24;
+  sample: number;
+  hitRate: number;
+  averageNetReturnPct: number;
+};
+
+type ValidationBand = {
+  key: "low" | "moderate" | "high";
+  label: string;
+  range: string;
+  sample: number;
+  averageConfidence: number;
+  hitRate: number;
+  averageNetReturnPct: number;
+};
+
+type SignalValidation = {
+  readiness: "collecting" | "review_ready";
+  sampleTarget: number;
+  highConfidenceTarget: number;
+  primarySample: number;
+  highConfidenceSample: number;
+  maturedSignals: number;
+  maturedEvaluations: number;
+  coverageDays: number;
+  roundTripCostBps: number;
+  lastEvaluatedAt: string | null;
+  horizons: ValidationHorizon[];
+  bands: ValidationBand[];
 };
 
 type AutomationRun = {
@@ -308,6 +342,29 @@ export default function Home() {
     buyHoldReturnPct: 0,
     alphaVsBtcPct: 0,
     snapshots: 0,
+    executionCosts: 0,
+    benchmarkContributions: 0,
+  });
+  const [validation, setValidation] = useState<SignalValidation>({
+    readiness: "collecting",
+    sampleTarget: 100,
+    highConfidenceTarget: 30,
+    primarySample: 0,
+    highConfidenceSample: 0,
+    maturedSignals: 0,
+    maturedEvaluations: 0,
+    coverageDays: 0,
+    roundTripCostBps: 60,
+    lastEvaluatedAt: null,
+    horizons: [
+      { hours: 4, sample: 0, hitRate: 0, averageNetReturnPct: 0 },
+      { hours: 24, sample: 0, hitRate: 0, averageNetReturnPct: 0 },
+    ],
+    bands: [
+      { key: "low", label: "Low", range: "0–59", sample: 0, averageConfidence: 0, hitRate: 0, averageNetReturnPct: 0 },
+      { key: "moderate", label: "Moderate", range: "60–74", sample: 0, averageConfidence: 0, hitRate: 0, averageNetReturnPct: 0 },
+      { key: "high", label: "High", range: "75–100", sample: 0, averageConfidence: 0, hitRate: 0, averageNetReturnPct: 0 },
+    ],
   });
   const [automation, setAutomation] = useState<AutomationRun | null>(null);
   const [autoPaperEnabled, setAutoPaperEnabled] = useState(true);
@@ -346,6 +403,7 @@ export default function Home() {
         events?: FeedEvent[];
         alerts?: DashboardAlert[];
         performance?: ServerPerformance;
+        validation?: SignalValidation;
         automation?: AutomationRun | null;
         settings?: { autoPaperEnabled?: boolean };
         coinbase?: CoinbaseStatus;
@@ -378,6 +436,7 @@ export default function Home() {
       if (payload.events?.length) setFeedEvents(payload.events);
       if (payload.alerts) setAlerts(payload.alerts);
       if (payload.performance) setServerPerformance(payload.performance);
+      if (payload.validation) setValidation(payload.validation);
       if (payload.automation !== undefined) setAutomation(payload.automation);
       if (payload.settings?.autoPaperEnabled !== undefined) setAutoPaperEnabled(payload.settings.autoPaperEnabled);
       if (payload.coinbase) setCoinbase(payload.coinbase);
@@ -432,6 +491,8 @@ export default function Home() {
     permissions: coinbase.permissions,
     message: coinbase.message,
   }];
+  const fourHourValidation = validation.horizons.find((item) => item.hours === 4);
+  const twentyFourHourValidation = validation.horizons.find((item) => item.hours === 24);
 
   function selectAsset(symbol: PaperSymbol) {
     setActiveAsset(symbol);
@@ -589,6 +650,7 @@ export default function Home() {
             {marketSource === "live" ? "LIVE SOURCES · PAPER ONLY" : "CONNECTING LIVE SOURCES"}
           </span>
           <span className="status"><i /> SYSTEM ONLINE</span>
+          {/* Full-page navigation avoids an unreliable client-router transition on the hosted build. */}
           <a className="settingsLink" href="/settings">SETTINGS</a>
           <span className="viewerName">{viewer.displayName}</span>
           <button className="avatar" aria-label={`${viewer.displayName} account`}>
@@ -1042,6 +1104,87 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="validationSection" aria-labelledby="validation-title">
+        <div className="paperTitleRow validationTitle">
+          <div>
+            <p className="eyebrow">FORWARD VALIDATION · NO LOOK-AHEAD</p>
+            <h2 id="validation-title">Signal evidence scorecard</h2>
+            <p>
+              Every recorded call is automatically checked after 4 and 24 hours.
+              Results are net of a {(validation.roundTripCostBps / 100).toFixed(2)}% round-trip cost assumption.
+            </p>
+          </div>
+          <span className={`statePill ${validation.readiness === "review_ready" ? "safe" : "observe"}`}>
+            {validation.readiness === "review_ready" ? "REVIEW READY" : "COLLECTING"}
+          </span>
+        </div>
+
+        <div className="validationMetrics">
+          <article>
+            <span>24H SAMPLE</span>
+            <strong>{validation.primarySample}<small>/{validation.sampleTarget}</small></strong>
+            <p>Minimum mature calls before a strategy review</p>
+          </article>
+          <article>
+            <span>4H HIT RATE</span>
+            <strong>{fourHourValidation?.sample ? `${fourHourValidation.hitRate.toFixed(1)}%` : "—"}</strong>
+            <p>{fourHourValidation?.sample ?? 0} cost-adjusted outcomes</p>
+          </article>
+          <article>
+            <span>24H HIT RATE</span>
+            <strong>{twentyFourHourValidation?.sample ? `${twentyFourHourValidation.hitRate.toFixed(1)}%` : "—"}</strong>
+            <p>{twentyFourHourValidation?.sample ?? 0} cost-adjusted outcomes</p>
+          </article>
+          <article>
+            <span>24H NET EDGE</span>
+            <strong className={(twentyFourHourValidation?.averageNetReturnPct ?? 0) >= 0 ? "positive" : "negative"}>
+              {twentyFourHourValidation?.sample
+                ? `${(twentyFourHourValidation.averageNetReturnPct ?? 0) >= 0 ? "+" : ""}${twentyFourHourValidation.averageNetReturnPct.toFixed(2)}%`
+                : "—"}
+            </strong>
+            <p>Average directional return after assumed costs</p>
+          </article>
+        </div>
+
+        <div className="validationGrid">
+          <article className="panel calibrationPanel">
+            <div className="operationHead">
+              <div><p className="eyebrow">CONFIDENCE CALIBRATION</p><h3>Does stronger evidence perform better?</h3></div>
+              <span>{validation.highConfidenceSample}/{validation.highConfidenceTarget} HIGH-CONF</span>
+            </div>
+            <div className="calibrationTable" role="table" aria-label="24-hour confidence calibration">
+              <div className="calibrationRow calibrationLabels" role="row">
+                <span>BAND</span><span>SAMPLE</span><span>HIT RATE</span><span>NET EDGE</span>
+              </div>
+              {validation.bands.map((band) => (
+                <div className="calibrationRow" role="row" key={band.key}>
+                  <strong className={band.key}>{band.label}<small>{band.range}</small></strong>
+                  <span>{band.sample}</span>
+                  <span>{band.sample ? `${band.hitRate.toFixed(1)}%` : "—"}</span>
+                  <span className={band.averageNetReturnPct >= 0 ? "positive" : "negative"}>
+                    {band.sample ? `${band.averageNetReturnPct >= 0 ? "+" : ""}${band.averageNetReturnPct.toFixed(2)}%` : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel validationMethod">
+            <p className="eyebrow">VALIDATION RULES</p>
+            <h3>What counts as a correct call</h3>
+            <ul>
+              <li><strong>Frozen prediction</strong><span>The side and confidence are stored before the outcome exists.</span></li>
+              <li><strong>Two horizons</strong><span>Each call matures independently at 4 hours and 24 hours.</span></li>
+              <li><strong>Costs included</strong><span>A call must beat {(validation.roundTripCostBps / 100).toFixed(2)}% assumed round-trip drag to count as correct.</span></li>
+              <li><strong>Sample gate</strong><span>No model change before {validation.sampleTarget} mature 24-hour calls, including {validation.highConfidenceTarget} high-confidence calls.</span></li>
+            </ul>
+            <p className="validationFootnote">
+              Confidence is evidence agreement—not a guaranteed probability of profit. Historical news, social, and whale data are not reconstructed; this is an honest walk-forward test of the full live signal.
+            </p>
+          </article>
+        </div>
+      </section>
+
       <section className="operationsSection" aria-labelledby="operations-title">
         <div className="paperTitleRow operationsTitle">
           <div>
@@ -1061,7 +1204,7 @@ export default function Home() {
               <span className={`statePill ${autoPaperEnabled ? "safe" : "off"}`}>{autoPaperEnabled ? "ENABLED" : "PAUSED"}</span>
             </div>
             <div className="switchRow">
-              <span><strong>{viewer.displayName}&apos;s automatic paper decisions</strong><small>Maximum one qualifying simulation per user per run</small></span>
+              <span><strong>{viewer.displayName}&apos;s automatic paper buys and sells</strong><small>Buys stop at the daily cap; sells are limited to held positions</small></span>
               <input aria-label="Automatic paper decisions" checked={autoPaperEnabled} type="checkbox" onChange={(event) => void toggleAutoPaper(event.target.checked)} />
             </div>
             <dl className="operationFacts">
@@ -1084,8 +1227,10 @@ export default function Home() {
               <div><span>BTC hold</span><strong>{serverPerformance.buyHoldReturnPct >= 0 ? "+" : ""}{serverPerformance.buyHoldReturnPct.toFixed(2)}%</strong></div>
               <div><span>Alpha vs BTC</span><strong className={serverPerformance.alphaVsBtcPct >= 0 ? "positive" : "negative"}>{serverPerformance.alphaVsBtcPct >= 0 ? "+" : ""}{serverPerformance.alphaVsBtcPct.toFixed(2)}%</strong></div>
               <div><span>Max drawdown</span><strong className="negative">−{serverPerformance.maxDrawdownPct.toFixed(2)}%</strong></div>
+              <div><span>Execution costs</span><strong>{money(serverPerformance.executionCosts)}</strong></div>
+              <div><span>Portfolio samples</span><strong>{serverPerformance.snapshots}</strong></div>
             </div>
-            <p className="operationNote">{serverPerformance.snapshots} portfolio snapshots recorded. Confidence calibration stays observational until the sample is large enough for human review.</p>
+            <p className="operationNote">BTC hold uses the same contribution timing as the paper account. Confidence calibration remains observational until the sample gate is met.</p>
           </article>
 
           <article className="panel operationCard alertsCard">
