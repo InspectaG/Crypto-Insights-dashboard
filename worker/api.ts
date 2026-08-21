@@ -5,7 +5,7 @@ import {
   type PaperSide,
   type PaperSymbol,
 } from "../lib/paper-trading";
-import { minimumConfidenceForRisk } from "../lib/risk-controls";
+import { normalizePaperSettings, paperStartingCashSettingKey } from "../lib/paper-settings";
 import { runAutomation } from "./automation";
 import { getCoinbaseStatus, validateCoinbaseCredentials } from "./coinbase";
 import {
@@ -69,15 +69,17 @@ async function controlPlane(env: WorkerEnv, user: AppUser) {
   const market = await fetchMarketData();
   const prices = pricesFromMarket(market);
   const account = await loadPaperAccount(env.DB, user.accountId);
-  const [events, alerts, automation, coinbase, autoPaperEnabled, performance, validation] = await Promise.all([
+  const [events, alerts, automation, coinbase, autoPaperEnabled, paperStartingCash, performance, validation] = await Promise.all([
     loadRecentEvents(env.DB),
     loadAlerts(env.DB, user.id),
     latestAutomationRun(env.DB),
     getCoinbaseStatus(env, user.id),
     getSetting(env.DB, `auto_paper_enabled:${user.id}`, "true"),
+    getSetting(env.DB, paperStartingCashSettingKey(user.id), String(account.startingBalance)),
     buildPerformance(env.DB, user.accountId, account, prices),
     buildSignalValidation(env.DB),
   ]);
+  const savedStartingCash = normalizePaperSettings({ startingCash: paperStartingCash }, account).startingCash;
   const comparison = await Promise.all(appUsers.map(async (profile) => {
     const profileAccount = profile.id === user.id ? account : await loadPaperAccount(env.DB, profile.accountId);
     const profilePerformance = profile.id === user.id
@@ -111,6 +113,7 @@ async function controlPlane(env: WorkerEnv, user: AppUser) {
     automation,
     settings: {
       autoPaperEnabled: autoPaperEnabled === "true",
+      paperStartingCash: savedStartingCash,
       realTradingEnabled: false,
       realTradingKillSwitch: true,
       realDailyLimit: 0,
@@ -207,7 +210,9 @@ export async function handleApi(request: Request, env: WorkerEnv) {
       const input = await body(request);
       const startingBalance = Math.max(100, Math.min(10_000_000, Number(input.startingBalance ?? 10_000)));
       const dailyLimit = Math.max(1, Math.min(startingBalance, Number(input.dailyLimit ?? 1_000)));
-      return json({ ok: true, paperAccount: await resetPaperAccount(env.DB, user.accountId, startingBalance, dailyLimit) });
+      const paperAccount = await resetPaperAccount(env.DB, user.accountId, startingBalance, dailyLimit);
+      await setSettings(env.DB, { [paperStartingCashSettingKey(user.id)]: String(startingBalance) });
+      return json({ ok: true, paperAccount });
     }
     if (request.method === "POST" && url.pathname === "/api/paper/deposit") {
       const input = await body(request);
@@ -218,14 +223,19 @@ export async function handleApi(request: Request, env: WorkerEnv) {
     if (request.method === "PATCH" && url.pathname === "/api/paper/settings") {
       const input = await body(request);
       const account = await loadPaperAccount(env.DB, user.accountId);
-      account.dailyLimit = Math.max(1, Math.min(10_000_000, Number(input.dailyLimit ?? account.dailyLimit)));
-      account.orderSize = Math.max(1, Math.min(account.dailyLimit, Number(input.orderSize ?? account.orderSize)));
-      account.riskLevel = Math.round(Math.max(0, Math.min(100, Number(input.riskLevel ?? account.riskLevel))));
-      account.minimumConfidence = minimumConfidenceForRisk(account.riskLevel);
+      const settings = normalizePaperSettings(input, account);
+      account.dailyLimit = settings.dailyLimit;
+      account.orderSize = settings.orderSize;
+      account.riskLevel = settings.riskLevel;
+      account.minimumConfidence = settings.minimumConfidence;
       await savePaperAccount(env.DB, user.accountId, account);
+      const runtimeSettings: Record<string, string> = {
+        [paperStartingCashSettingKey(user.id)]: String(settings.startingCash),
+      };
       if (typeof input.autoPaperEnabled === "boolean") {
-        await setSettings(env.DB, { [`auto_paper_enabled:${user.id}`]: String(input.autoPaperEnabled) });
+        runtimeSettings[`auto_paper_enabled:${user.id}`] = String(input.autoPaperEnabled);
       }
+      await setSettings(env.DB, runtimeSettings);
       return json({ ok: true, paperAccount: account });
     }
     if (request.method === "POST" && url.pathname === "/api/automation/run") {

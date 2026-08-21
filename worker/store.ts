@@ -11,6 +11,7 @@ import {
   validationHorizons,
   type SignalEvaluation,
 } from "../lib/signal-validation";
+import { paperStartingCashSettingKey } from "../lib/paper-settings";
 import type { AlertRecord, D1Database, IntelligenceEvent, LiveSignal, MarketAsset } from "./types";
 import { appUsers } from "./access";
 
@@ -77,6 +78,9 @@ export async function ensureDatabase(db: D1Database) {
         ...appUsers.map((user) => db.prepare(
           "INSERT OR IGNORE INTO runtime_settings (key, value, updated_at) VALUES (?, 'true', ?)",
         ).bind(`auto_paper_enabled:${user.id}`, now)),
+        ...appUsers.map((user) => db.prepare(
+          "INSERT OR IGNORE INTO runtime_settings (key, value, updated_at) VALUES (?, '10000', ?)",
+        ).bind(paperStartingCashSettingKey(user.id), now)),
         db.prepare(
           "INSERT OR IGNORE INTO runtime_settings (key, value, updated_at) VALUES ('real_trading_enabled', 'false', ?)",
         ).bind(now),

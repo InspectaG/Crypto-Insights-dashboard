@@ -154,6 +154,7 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .percentInput i { padding: 0 11px 0 0; }
 .moneyInput input, .percentInput input { appearance: textfield; background: transparent; border: 0; color: #dfe7f7; font-family: var(--font-geist-mono); font-size: 11px; height: 100%; min-width: 0; outline: 0; padding: 0 9px; width: 100%; }
 .moneyInput input::-webkit-inner-spin-button, .percentInput input::-webkit-inner-spin-button { appearance: none; }
+.autoSaveNote { color: #647089; font-family: var(--font-geist-mono); font-size: 8px; line-height: 1.45; margin: 10px 0 0; min-height: 12px; }.autoSaveNote.saved { color: var(--green); }.autoSaveNote.error { color: var(--red); }
 .guardrailNote { color: #69758c; font-size: 9px; line-height: 1.55; margin: 13px 0 0; }
 .riskSlider { background: #090e18; border: 1px solid var(--line); border-radius: 7px; margin-top: 16px; padding: 11px 12px; }.riskSlider + .riskSlider { margin-top: 8px; }.riskSlider > div { display: flex; justify-content: space-between; }.riskSlider span, .riskSlider strong { font-size: 9px; }.riskSlider strong { color: var(--blue); font-family: var(--font-geist-mono); }.riskSlider input { accent-color: var(--blue); display: block; margin: 11px 0 7px; width: 100%; }.riskSlider small { color: #626f87; display: block; font-size: 8px; line-height: 1.45; }
 .dailySlider strong { color: var(--green); }

@@ -12,6 +12,7 @@ import {
   type PaperSide,
   type PaperSymbol,
 } from "../lib/paper-trading";
+import type { PaperSettingsDraft } from "../lib/paper-settings";
 import { minimumConfidenceForRisk, riskLabel } from "../lib/risk-controls";
 
 type Bias = "bullish" | "bearish" | "neutral";
@@ -387,6 +388,7 @@ export default function Home() {
   const [paperMessage, setPaperMessage] = useState(
     "Forward test is ready. No real orders or money are involved.",
   );
+  const [paperSettingsStatus, setPaperSettingsStatus] = useState<"loading" | "saving" | "saved" | "error">("loading");
 
   const syncControlPlane = useCallback(async (showProgress = false) => {
     if (showProgress) setSyncing(true);
@@ -406,14 +408,14 @@ export default function Home() {
         performance?: ServerPerformance;
         validation?: SignalValidation;
         automation?: AutomationRun | null;
-        settings?: { autoPaperEnabled?: boolean };
+        settings?: { autoPaperEnabled?: boolean; paperStartingCash?: number };
         coinbase?: CoinbaseStatus;
         comparison?: ComparisonProfile[];
       };
       if (!response.ok) throw new Error(payload.error ?? "Dashboard sync failed");
       if (payload.paperAccount) {
         setPaperAccount(payload.paperAccount);
-        setFundAmount(payload.paperAccount.startingBalance);
+        setFundAmount(payload.settings?.paperStartingCash ?? payload.paperAccount.startingBalance);
       }
       if (payload.user) setViewer(payload.user);
       if (payload.comparison) setComparison(payload.comparison);
@@ -440,6 +442,7 @@ export default function Home() {
       if (payload.validation) setValidation(payload.validation);
       if (payload.automation !== undefined) setAutomation(payload.automation);
       if (payload.settings?.autoPaperEnabled !== undefined) setAutoPaperEnabled(payload.settings.autoPaperEnabled);
+      setPaperSettingsStatus("saved");
       if (payload.coinbase) setCoinbase(payload.coinbase);
       setPaperReady(true);
     } catch (error) {
@@ -521,22 +524,46 @@ export default function Home() {
     }
   }
 
-  async function savePaperSettings() {
+  const persistPaperSettings = useCallback(async (settings: PaperSettingsDraft) => {
     const response = await fetch("/api/paper/settings", {
       method: "PATCH",
       credentials: "same-origin",
+      keepalive: true,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderSize: paperAccount.orderSize,
-        dailyLimit: paperAccount.dailyLimit,
-        riskLevel: paperAccount.riskLevel,
-        autoPaperEnabled,
-      }),
+      body: JSON.stringify(settings),
     });
-    const result = await response.json() as { error?: string; paperAccount?: PaperAccount };
+    const result = await response.json() as { error?: string };
     if (!response.ok) throw new Error(result.error ?? "Settings update failed");
-    if (result.paperAccount) setPaperAccount(result.paperAccount);
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!paperReady) return;
+    const settings: PaperSettingsDraft = {
+      startingCash: fundAmount,
+      dailyLimit: paperAccount.dailyLimit,
+      orderSize: paperAccount.orderSize,
+      riskLevel: paperAccount.riskLevel,
+      autoPaperEnabled,
+    };
+    const timer = window.setTimeout(() => {
+      setPaperSettingsStatus("saving");
+      void persistPaperSettings(settings)
+        .then(() => setPaperSettingsStatus("saved"))
+        .catch((error) => {
+          setPaperSettingsStatus("error");
+          setPaperMessage(error instanceof Error ? error.message : "Settings update failed");
+        });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    autoPaperEnabled,
+    fundAmount,
+    paperAccount.dailyLimit,
+    paperAccount.orderSize,
+    paperAccount.riskLevel,
+    paperReady,
+    persistPaperSettings,
+  ]);
 
   async function resetPaperAccount() {
     const startingBalance = Math.max(100, Number(fundAmount) || 0);
@@ -604,25 +631,8 @@ export default function Home() {
     setAlerts((current) => current.map((alert) => ({ ...alert, readAt: alert.readAt ?? new Date().toISOString() })));
   }
 
-  async function toggleAutoPaper(enabled: boolean) {
+  function toggleAutoPaper(enabled: boolean) {
     setAutoPaperEnabled(enabled);
-    try {
-      const response = await fetch("/api/paper/settings", {
-        method: "PATCH",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderSize: paperAccount.orderSize,
-          dailyLimit: paperAccount.dailyLimit,
-          riskLevel: paperAccount.riskLevel,
-          autoPaperEnabled: enabled,
-        }),
-      });
-      if (!response.ok) throw new Error("Automation setting failed");
-    } catch (error) {
-      setAutoPaperEnabled(!enabled);
-      setPaperMessage(error instanceof Error ? error.message : "Automation setting failed");
-    }
   }
 
   async function enableBrowserAlerts() {
@@ -895,8 +905,6 @@ export default function Home() {
                         minimumConfidence: minimumConfidenceForRisk(riskLevel),
                       }));
                     }}
-                    onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
-                    onPointerUp={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                   />
                   <small>Higher risk permits lower-confidence paper signals. It never changes the real-money lock.</small>
                 </div>
@@ -910,8 +918,6 @@ export default function Home() {
                     type="range"
                     value={Math.min(Math.max(10_000, paperAccount.startingBalance), paperAccount.dailyLimit)}
                     onChange={(event) => setPaperAccount((account) => ({ ...account, dailyLimit: Number(event.target.value) }))}
-                    onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
-                    onPointerUp={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                   />
                   <small>Paper buys stop automatically when your personal daily cap is exhausted; the minimum is $1/day.</small>
                 </div>
@@ -935,7 +941,6 @@ export default function Home() {
                       step="1"
                       type="number"
                       value={paperAccount.dailyLimit}
-                      onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                       onChange={(event) => setPaperAccount((account) => ({ ...account, dailyLimit: Math.max(1, Number(event.target.value)) }))}
                     /></span>
                   </label>
@@ -947,10 +952,9 @@ export default function Home() {
                       step="25"
                       type="number"
                       value={paperAccount.orderSize}
-                      onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                       onChange={(event) => setPaperAccount((account) => ({
                         ...account,
-                        orderSize: Math.max(0, Number(event.target.value)),
+                        orderSize: Math.max(1, Number(event.target.value)),
                       }))}
                     /></span>
                   </label>
@@ -966,6 +970,12 @@ export default function Home() {
                     /><i>%</i></span>
                   </label>
                 </div>
+                <p className={`autoSaveNote ${paperSettingsStatus}`} aria-live="polite">
+                  {paperSettingsStatus === "saving" && "Saving your paper settings…"}
+                  {paperSettingsStatus === "saved" && `Saved for ${viewer.displayName}. Starting cash applies when you choose Reset & fund.`}
+                  {paperSettingsStatus === "error" && "Settings could not be saved. Try changing a value again."}
+                  {paperSettingsStatus === "loading" && "Loading your saved paper settings…"}
+                </p>
                 <div className="depositRow">
                   <div><strong>One-time paper cash injection</strong><small>Add funds without resetting performance history.</small></div>
                   <span className="moneyInput"><i>$</i><input aria-label="One-time paper deposit" min="1" step="100" type="number" value={depositAmount} onChange={(event) => setDepositAmount(Number(event.target.value))} /></span>
@@ -1206,7 +1216,7 @@ export default function Home() {
             </div>
             <div className="switchRow">
               <span><strong>{viewer.displayName}&apos;s automatic paper buys and sells</strong><small>Buys stop at the daily cap; sells are limited to held positions</small></span>
-              <input aria-label="Automatic paper decisions" checked={autoPaperEnabled} type="checkbox" onChange={(event) => void toggleAutoPaper(event.target.checked)} />
+              <input aria-label="Automatic paper decisions" checked={autoPaperEnabled} type="checkbox" onChange={(event) => toggleAutoPaper(event.target.checked)} />
             </div>
             <dl className="operationFacts">
               <div><dt>Last status</dt><dd>{automation?.status ?? "INITIALIZING"}</dd></div>

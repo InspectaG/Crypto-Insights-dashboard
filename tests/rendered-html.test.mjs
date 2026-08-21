@@ -50,6 +50,7 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Risk tolerance/);
   assert.match(html, /Daily investment cap/);
   assert.match(html, /minimum is \$1\/day/i);
+  assert.match(html, /Loading your saved paper settings/i);
   assert.match(html, /One-time paper cash injection/);
   assert.match(html, /Open Coinbase settings/);
   assert.doesNotMatch(html, /Coinbase API key name|ECDSA private key|Write-only secret/i);
