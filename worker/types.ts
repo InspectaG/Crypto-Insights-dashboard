@@ -1,5 +1,14 @@
 import type { PaperSide, PaperSymbol } from "../lib/paper-trading";
 
+export type AppUserId = "justin" | "gatcho";
+
+export type AppUser = {
+  id: AppUserId;
+  email: string;
+  displayName: string;
+  accountId: string;
+};
+
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T>(): Promise<T | null>;
@@ -86,6 +95,7 @@ export type LiveSignal = {
 
 export type AlertRecord = {
   id: string;
+  userId: AppUserId;
   kind: string;
   severity: "info" | "watch" | "action";
   title: string;

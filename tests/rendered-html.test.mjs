@@ -30,7 +30,7 @@ test("server-renders the crypto intelligence dashboard", async () => {
   const html = await response.text();
   assert.match(html, /<title>Gatchek Signals \| Crypto Intelligence Desk<\/title>/i);
   assert.match(html, /Market pulse/);
-  assert.match(html, /Paper trading lab/);
+  assert.match(html, /paper trading lab/i);
   assert.match(html, /Daily buy limit/);
   assert.match(html, /Human review stays in the loop/);
   assert.match(html, /Model confidence/i);
@@ -41,6 +41,10 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Paper autopilot/);
   assert.match(html, /Performance benchmark/);
   assert.match(html, /TRADING LOCKED/);
+  assert.match(html, /Performance comparison/);
+  assert.match(html, /Risk tolerance/);
+  assert.match(html, /Daily investment cap/);
+  assert.match(html, /One-time paper cash injection/);
   assert.match(html, /not financial advice/i);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);
 });

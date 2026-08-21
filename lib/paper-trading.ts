@@ -29,6 +29,7 @@ export type PaperAccount = {
   cash: number;
   dailyLimit: number;
   orderSize: number;
+  riskLevel: number;
   minimumConfidence: number;
   executionDragBps: number;
   positions: Record<PaperSymbol, PaperPosition>;
@@ -63,6 +64,7 @@ export function createPaperAccount(
     cash: startingBalance,
     dailyLimit,
     orderSize: Math.min(250, dailyLimit),
+    riskLevel: 50,
     minimumConfidence: 65,
     executionDragBps: 30,
     positions: emptyPositions(),
@@ -79,6 +81,7 @@ export function isPaperAccount(value: unknown): value is PaperAccount {
     typeof account.startingBalance === "number" &&
     typeof account.dailyLimit === "number" &&
     typeof account.orderSize === "number" &&
+    typeof account.riskLevel === "number" &&
     typeof account.minimumConfidence === "number" &&
     typeof account.executionDragBps === "number" &&
     Array.isArray(account.trades) &&

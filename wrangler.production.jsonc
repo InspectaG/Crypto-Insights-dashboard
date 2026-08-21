@@ -22,7 +22,7 @@
       "binding": "DB",
       "database_name": "gatchek-crypto-signals-prod",
       "database_id": "13cf8909-e2cb-4e9b-a23f-ac7eae9f7739",
-      "migrations_dir": ".openai/drizzle"
+      "migrations_dir": "drizzle"
     }
   ],
   "assets": {

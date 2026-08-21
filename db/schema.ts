@@ -4,12 +4,21 @@
  * safely execute the list with D1 prepared statements.
  */
 export const schemaStatements = [
+  `CREATE TABLE IF NOT EXISTS app_users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    paper_account_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS paper_accounts (
     id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
     starting_balance REAL NOT NULL CHECK (starting_balance >= 0),
     cash REAL NOT NULL CHECK (cash >= 0),
     daily_limit REAL NOT NULL CHECK (daily_limit >= 0),
     order_size REAL NOT NULL CHECK (order_size > 0),
+    risk_level INTEGER NOT NULL DEFAULT 50 CHECK (risk_level BETWEEN 0 AND 100),
     minimum_confidence INTEGER NOT NULL CHECK (minimum_confidence BETWEEN 0 AND 100),
     execution_drag_bps INTEGER NOT NULL CHECK (execution_drag_bps BETWEEN 0 AND 1000),
     created_at TEXT NOT NULL,
@@ -89,6 +98,7 @@ export const schemaStatements = [
   )`,
   `CREATE TABLE IF NOT EXISTS alerts (
     id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
     kind TEXT NOT NULL,
     severity TEXT NOT NULL CHECK (severity IN ('info', 'watch', 'action')),
     title TEXT NOT NULL,
@@ -96,6 +106,15 @@ export const schemaStatements = [
     source_url TEXT,
     read_at TEXT,
     created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS paper_cash_flows (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    amount REAL NOT NULL CHECK (amount > 0),
+    kind TEXT NOT NULL CHECK (kind IN ('deposit', 'reset')),
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (account_id) REFERENCES paper_accounts(id) ON DELETE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS runtime_settings (
     key TEXT PRIMARY KEY,
@@ -118,5 +137,7 @@ export const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS idx_signals_symbol_time ON signal_snapshots(symbol, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_portfolio_account_time ON portfolio_snapshots(account_id, captured_at ASC)`,
   `CREATE INDEX IF NOT EXISTS idx_alerts_unread_time ON alerts(read_at, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_alerts_user_unread_time ON alerts(user_id, read_at, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_cash_flows_account_time ON paper_cash_flows(account_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_automation_time ON automation_runs(started_at DESC)`,
 ] as const;

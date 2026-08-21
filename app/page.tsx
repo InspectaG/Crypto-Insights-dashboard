@@ -11,6 +11,7 @@ import {
   type PaperSide,
   type PaperSymbol,
 } from "../lib/paper-trading";
+import { minimumConfidenceForRisk, riskLabel } from "../lib/risk-controls";
 
 type Bias = "bullish" | "bearish" | "neutral";
 type ConfidenceBand = "high" | "moderate" | "low";
@@ -79,6 +80,23 @@ type AutomationRun = {
   events: number;
   tradeId: string | null;
   error: string | null;
+};
+
+type Viewer = { id: "justin" | "gatcho"; email: string; displayName: string };
+
+type ComparisonProfile = {
+  id: "justin" | "gatcho";
+  displayName: string;
+  isViewer: boolean;
+  equity: number;
+  totalPnl: number;
+  returnPct: number;
+  realizedPnl: number;
+  maxDrawdownPct: number;
+  closedTrades: number;
+  winRate: number;
+  riskLevel: number;
+  dailyLimit: number;
 };
 
 type CoinbaseConnection = {
@@ -276,6 +294,8 @@ export default function Home() {
   const [assetData, setAssetData] = useState(fallbackAssets);
   const [marketSource, setMarketSource] = useState<"live" | "fallback">("fallback");
   const [paperAccount, setPaperAccount] = useState(() => createPaperAccount());
+  const [viewer, setViewer] = useState<Viewer>({ id: "justin", email: "gatchek@gmail.com", displayName: "Justin" });
+  const [comparison, setComparison] = useState<ComparisonProfile[]>([]);
   const [paperReady, setPaperReady] = useState(false);
   const [profiles, setProfiles] = useState(signalProfiles);
   const [feedEvents, setFeedEvents] = useState(fallbackEvents);
@@ -301,7 +321,8 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const [paperSide, setPaperSide] = useState<PaperSide>("BUY");
   const [fundAmount, setFundAmount] = useState(10_000);
-  const [fundDailyLimit, setFundDailyLimit] = useState(1_000);
+  const [depositAmount, setDepositAmount] = useState(1_000);
+  const [oneTimeOrder, setOneTimeOrder] = useState(250);
   const [paperMessage, setPaperMessage] = useState(
     "Forward test is ready. No real orders or money are involved.",
   );
@@ -312,6 +333,7 @@ export default function Home() {
       const response = await fetch("/api/control-plane", { credentials: "same-origin" });
       const payload = await response.json() as {
         error?: string;
+        user?: Viewer;
         paperAccount?: PaperAccount;
         market?: Array<{
           symbol: PaperSymbol; name: string; priceLabel: string; changeLabel: string;
@@ -324,13 +346,15 @@ export default function Home() {
         automation?: AutomationRun | null;
         settings?: { autoPaperEnabled?: boolean };
         coinbase?: CoinbaseStatus;
+        comparison?: ComparisonProfile[];
       };
       if (!response.ok) throw new Error(payload.error ?? "Dashboard sync failed");
       if (payload.paperAccount) {
         setPaperAccount(payload.paperAccount);
         setFundAmount(payload.paperAccount.startingBalance);
-        setFundDailyLimit(payload.paperAccount.dailyLimit);
       }
+      if (payload.user) setViewer(payload.user);
+      if (payload.comparison) setComparison(payload.comparison);
       if (payload.market?.length) {
         setAssetData(payload.market.map((asset) => ({
           symbol: asset.symbol,
@@ -418,7 +442,7 @@ export default function Home() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: activeAsset, side: paperSide, grossValue: paperAccount.orderSize }),
+        body: JSON.stringify({ symbol: activeAsset, side: paperSide, grossValue: oneTimeOrder }),
       });
       const result = await response.json() as { error?: string; paperAccount?: PaperAccount; trade?: { side: string; symbol: string; marketPrice: number } };
       if (!response.ok || !result.paperAccount || !result.trade) throw new Error(result.error ?? "Paper order failed");
@@ -439,7 +463,8 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         orderSize: paperAccount.orderSize,
-        minimumConfidence: paperAccount.minimumConfidence,
+        dailyLimit: paperAccount.dailyLimit,
+        riskLevel: paperAccount.riskLevel,
         autoPaperEnabled,
       }),
     });
@@ -450,10 +475,7 @@ export default function Home() {
 
   async function resetPaperAccount() {
     const startingBalance = Math.max(100, Number(fundAmount) || 0);
-    const dailyLimit = Math.min(
-      startingBalance,
-      Math.max(10, Number(fundDailyLimit) || 0),
-    );
+    const dailyLimit = Math.max(10, Number(paperAccount.dailyLimit) || 0);
     setSyncing(true);
     try {
       const response = await fetch("/api/paper/reset", {
@@ -469,6 +491,28 @@ export default function Home() {
       await syncControlPlane();
     } catch (error) {
       setPaperMessage(error instanceof Error ? error.message : "Reset failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function depositPaperCash() {
+    const amount = Math.max(1, Number(depositAmount) || 0);
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/paper/deposit", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      const result = await response.json() as { error?: string; paperAccount?: PaperAccount };
+      if (!response.ok || !result.paperAccount) throw new Error(result.error ?? "Deposit failed");
+      setPaperAccount(result.paperAccount);
+      setPaperMessage(`${money(amount)} added once to ${viewer.displayName}'s paper cash without clearing history.`);
+      await syncControlPlane();
+    } catch (error) {
+      setPaperMessage(error instanceof Error ? error.message : "Deposit failed");
     } finally {
       setSyncing(false);
     }
@@ -504,7 +548,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderSize: paperAccount.orderSize,
-          minimumConfidence: paperAccount.minimumConfidence,
+          dailyLimit: paperAccount.dailyLimit,
+          riskLevel: paperAccount.riskLevel,
           autoPaperEnabled: enabled,
         }),
       });
@@ -541,7 +586,10 @@ export default function Home() {
             {marketSource === "live" ? "LIVE SOURCES · PAPER ONLY" : "CONNECTING LIVE SOURCES"}
           </span>
           <span className="status"><i /> SYSTEM ONLINE</span>
-          <button className="avatar" aria-label="Open account menu">JG</button>
+          <span className="viewerName">{viewer.displayName}</span>
+          <button className="avatar" aria-label={`${viewer.displayName} account`}>
+            {viewer.displayName.slice(0, 2).toUpperCase()}
+          </button>
         </div>
       </header>
 
@@ -684,13 +732,13 @@ export default function Home() {
         <div className="paperTitleRow">
           <div>
             <p className="eyebrow">FORWARD TEST · PAPER MONEY ONLY</p>
-            <h2>Paper trading lab</h2>
+            <h2>{viewer.displayName}&apos;s paper trading lab</h2>
             <p>
               Simulate signal-driven orders, enforce a daily buy limit, and measure
               what the strategy would have earned or lost without touching Coinbase.
             </p>
           </div>
-          <span className="paperBadge">SHARED D1 · NO REAL FUNDS</span>
+          <span className="paperBadge">PRIVATE LEDGER · NO REAL FUNDS</span>
         </div>
 
         <div className="paperMetrics" aria-label="Paper portfolio summary">
@@ -723,18 +771,82 @@ export default function Home() {
           </article>
         </div>
 
+        <div className="comparisonPanel panel" aria-label="Paper performance comparison">
+          <div className="comparisonIntro">
+            <p className="eyebrow">BROTHER VS BROTHER</p>
+            <h3>Performance comparison</h3>
+            <p>Results are visible to both of you; controls, alerts, positions, and Coinbase details stay private to each user.</p>
+          </div>
+          <div className="comparisonGrid">
+            {comparison.map((profile) => (
+              <article className={profile.isViewer ? "you" : ""} key={profile.id}>
+                <div className="comparisonName">
+                  <strong>{profile.displayName}</strong>
+                  {profile.isViewer && <span>YOU</span>}
+                </div>
+                <b className={profile.returnPct >= 0 ? "positive" : "negative"}>
+                  {profile.returnPct >= 0 ? "+" : ""}{profile.returnPct.toFixed(2)}%
+                </b>
+                <small>{money(profile.equity)} equity · {signedMoney(profile.totalPnl)} P/L</small>
+                <dl>
+                  <div><dt>Win rate</dt><dd>{profile.closedTrades ? `${profile.winRate.toFixed(0)}%` : "—"}</dd></div>
+                  <div><dt>Drawdown</dt><dd>−{profile.maxDrawdownPct.toFixed(2)}%</dd></div>
+                  <div><dt>Risk</dt><dd>{riskLabel(profile.riskLevel)}</dd></div>
+                  <div><dt>Daily cap</dt><dd>{money(profile.dailyLimit)}</dd></div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        </div>
+
         <div className="paperGrid">
           <article className="panel paperAccountPanel">
             <div className="paperControls">
               <div className="paperFunding">
                 <div className="subhead">
                   <div>
-                    <p className="eyebrow">ACCOUNT SANDBOX</p>
-                    <h3>Funding & guardrails</h3>
+                    <p className="eyebrow">{viewer.displayName.toUpperCase()} · PRIVATE CONTROLS</p>
+                    <h3>Risk, funding & guardrails</h3>
                   </div>
                   <button className="ghostButton" type="button" onClick={resetPaperAccount}>
                     Reset & fund
                   </button>
+                </div>
+                <div className="riskSlider">
+                  <div><span>Risk tolerance</span><strong>{paperAccount.riskLevel}/100 · {riskLabel(paperAccount.riskLevel)}</strong></div>
+                  <input
+                    aria-label="Paper risk tolerance"
+                    max="100"
+                    min="0"
+                    type="range"
+                    value={paperAccount.riskLevel}
+                    onChange={(event) => {
+                      const riskLevel = Number(event.target.value);
+                      setPaperAccount((account) => ({
+                        ...account,
+                        riskLevel,
+                        minimumConfidence: minimumConfidenceForRisk(riskLevel),
+                      }));
+                    }}
+                    onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
+                    onPointerUp={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
+                  />
+                  <small>Higher risk permits lower-confidence paper signals. It never changes the real-money lock.</small>
+                </div>
+                <div className="riskSlider dailySlider">
+                  <div><span>Daily investment cap</span><strong>{money(paperAccount.dailyLimit)}/day</strong></div>
+                  <input
+                    aria-label="Daily paper investment cap"
+                    max={Math.max(10_000, paperAccount.startingBalance)}
+                    min="50"
+                    step="50"
+                    type="range"
+                    value={Math.min(Math.max(10_000, paperAccount.startingBalance), paperAccount.dailyLimit)}
+                    onChange={(event) => setPaperAccount((account) => ({ ...account, dailyLimit: Number(event.target.value) }))}
+                    onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
+                    onPointerUp={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
+                  />
+                  <small>Paper buys stop automatically when your personal daily cap is exhausted.</small>
                 </div>
                 <div className="fieldGrid">
                   <label>
@@ -755,8 +867,9 @@ export default function Home() {
                       min="10"
                       step="50"
                       type="number"
-                      value={fundDailyLimit}
-                      onChange={(event) => setFundDailyLimit(Number(event.target.value))}
+                      value={paperAccount.dailyLimit}
+                      onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
+                      onChange={(event) => setPaperAccount((account) => ({ ...account, dailyLimit: Math.max(1, Number(event.target.value)) }))}
                     /></span>
                   </label>
                   <label>
@@ -781,14 +894,15 @@ export default function Home() {
                       max="100"
                       min="1"
                       type="number"
+                      readOnly
                       value={paperAccount.minimumConfidence}
-                      onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
-                      onChange={(event) => setPaperAccount((account) => ({
-                        ...account,
-                        minimumConfidence: Math.min(100, Math.max(1, Number(event.target.value))),
-                      }))}
                     /><i>%</i></span>
                   </label>
+                </div>
+                <div className="depositRow">
+                  <div><strong>One-time paper cash injection</strong><small>Add funds without resetting performance history.</small></div>
+                  <span className="moneyInput"><i>$</i><input aria-label="One-time paper deposit" min="1" step="100" type="number" value={depositAmount} onChange={(event) => setDepositAmount(Number(event.target.value))} /></span>
+                  <button className="ghostButton" disabled={syncing} type="button" onClick={() => void depositPaperCash()}>Add once</button>
                 </div>
                 <p className="guardrailNote">
                   Buys stop automatically at the daily limit. Results include a conservative
@@ -823,8 +937,12 @@ export default function Home() {
                 <dl className="ticketFacts">
                   <div><dt>Market price</dt><dd>{money(paperPrices[activeAsset])}</dd></div>
                   <div><dt>Model bias</dt><dd>{activeProfile.direction}</dd></div>
-                  <div><dt>Notional</dt><dd>{money(paperAccount.orderSize)}</dd></div>
+                  <div><dt>Default order</dt><dd>{money(paperAccount.orderSize)}</dd></div>
                 </dl>
+                <label className="oneTimeOrder">
+                  <span>This one-time paper order</span>
+                  <span className="moneyInput"><i>$</i><input aria-label="One-time paper order amount" min="1" step="25" type="number" value={oneTimeOrder} onChange={(event) => setOneTimeOrder(Number(event.target.value))} /></span>
+                </label>
                 <button className="paperTradeButton" disabled={syncing || !paperReady} type="button" onClick={() => void runPaperTrade()}>
                   {syncing ? "Working…" : `Simulate ${paperSide.toLowerCase()} order`}
                 </button>
@@ -914,7 +1032,7 @@ export default function Home() {
               </p>
             </div>
             <small className="localNote">
-              The ledger is stored in Cloudflare D1 and shared across your two authorized Google accounts.
+              Your ledger is isolated by authenticated user in Cloudflare D1; only aggregate comparison metrics are shared.
             </small>
           </aside>
         </div>
@@ -939,7 +1057,7 @@ export default function Home() {
               <span className={`statePill ${autoPaperEnabled ? "safe" : "off"}`}>{autoPaperEnabled ? "ENABLED" : "PAUSED"}</span>
             </div>
             <div className="switchRow">
-              <span><strong>Automatic paper decisions</strong><small>Maximum one qualifying simulation per run</small></span>
+              <span><strong>{viewer.displayName}&apos;s automatic paper decisions</strong><small>Maximum one qualifying simulation per user per run</small></span>
               <input aria-label="Automatic paper decisions" checked={autoPaperEnabled} type="checkbox" onChange={(event) => void toggleAutoPaper(event.target.checked)} />
             </div>
             <dl className="operationFacts">

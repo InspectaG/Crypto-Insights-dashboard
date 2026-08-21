@@ -7,17 +7,19 @@ import {
   type PaperSymbol,
 } from "../lib/paper-trading";
 import type { AlertRecord, D1Database, IntelligenceEvent, LiveSignal, MarketAsset } from "./types";
+import { appUsers } from "./access";
 
-const ACCOUNT_ID = "shared";
 const symbols: PaperSymbol[] = ["BTC", "ETH", "SOL"];
 let schemaReady: Promise<void> | null = null;
 
 type AccountRow = {
   id: string;
+  user_id: string;
   starting_balance: number;
   cash: number;
   daily_limit: number;
   order_size: number;
+  risk_level: number;
   minimum_confidence: number;
   execution_drag_bps: number;
   created_at: string;
@@ -52,20 +54,24 @@ export async function ensureDatabase(db: D1Database) {
       await db.batch(schemaStatements.map((sql) => db.prepare(sql)));
       const now = new Date().toISOString();
       await db.batch([
-        db.prepare(
+        ...appUsers.map((user) => db.prepare(
+          `INSERT OR IGNORE INTO app_users (id, email, display_name, paper_account_id, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        ).bind(user.id, user.email, user.displayName, user.accountId, now)),
+        ...appUsers.map((user) => db.prepare(
           `INSERT OR IGNORE INTO paper_accounts (
-            id, starting_balance, cash, daily_limit, order_size,
+            id, user_id, starting_balance, cash, daily_limit, order_size, risk_level,
             minimum_confidence, execution_drag_bps, created_at, updated_at, version
-          ) VALUES (?, 10000, 10000, 1000, 250, 65, 30, ?, ?, 1)`,
-        ).bind(ACCOUNT_ID, now, now),
-        ...symbols.map((symbol) =>
+          ) VALUES (?, ?, 10000, 10000, 1000, 250, 50, 65, 30, ?, ?, 1)`,
+        ).bind(user.accountId, user.id, now, now)),
+        ...appUsers.flatMap((user) => symbols.map((symbol) =>
           db.prepare(
             "INSERT OR IGNORE INTO paper_positions (account_id, symbol, quantity, cost_basis) VALUES (?, ?, 0, 0)",
-          ).bind(ACCOUNT_ID, symbol),
-        ),
-        db.prepare(
-          "INSERT OR IGNORE INTO runtime_settings (key, value, updated_at) VALUES ('auto_paper_enabled', 'true', ?)",
-        ).bind(now),
+          ).bind(user.accountId, symbol),
+        )),
+        ...appUsers.map((user) => db.prepare(
+          "INSERT OR IGNORE INTO runtime_settings (key, value, updated_at) VALUES (?, 'true', ?)",
+        ).bind(`auto_paper_enabled:${user.id}`, now)),
         db.prepare(
           "INSERT OR IGNORE INTO runtime_settings (key, value, updated_at) VALUES ('real_trading_enabled', 'false', ?)",
         ).bind(now),
@@ -84,18 +90,18 @@ export async function ensureDatabase(db: D1Database) {
   return schemaReady;
 }
 
-export async function loadPaperAccount(db: D1Database): Promise<PaperAccount> {
+export async function loadPaperAccount(db: D1Database, accountId: string): Promise<PaperAccount> {
   await ensureDatabase(db);
-  const account = await db.prepare("SELECT * FROM paper_accounts WHERE id = ?").bind(ACCOUNT_ID).first<AccountRow>();
+  const account = await db.prepare("SELECT * FROM paper_accounts WHERE id = ?").bind(accountId).first<AccountRow>();
   if (!account) return createPaperAccount();
 
   const [positionsResult, tradesResult] = await Promise.all([
-    db.prepare("SELECT symbol, quantity, cost_basis FROM paper_positions WHERE account_id = ?").bind(ACCOUNT_ID).all<PositionRow>(),
+    db.prepare("SELECT symbol, quantity, cost_basis FROM paper_positions WHERE account_id = ?").bind(accountId).all<PositionRow>(),
     db.prepare(
       `SELECT id, signal_id, symbol, side, quantity, gross_value, market_price,
         execution_drag, cash_impact, confidence, rationale, realized_pnl, executed_at
        FROM paper_trades WHERE account_id = ? ORDER BY executed_at DESC LIMIT 1000`,
-    ).bind(ACCOUNT_ID).all<TradeRow>(),
+    ).bind(accountId).all<TradeRow>(),
   ]);
 
   const positions = Object.fromEntries(
@@ -128,6 +134,7 @@ export async function loadPaperAccount(db: D1Database): Promise<PaperAccount> {
     cash: account.cash,
     dailyLimit: account.daily_limit,
     orderSize: account.order_size,
+    riskLevel: account.risk_level,
     minimumConfidence: account.minimum_confidence,
     executionDragBps: account.execution_drag_bps,
     positions,
@@ -137,6 +144,7 @@ export async function loadPaperAccount(db: D1Database): Promise<PaperAccount> {
 
 export async function savePaperAccount(
   db: D1Database,
+  accountId: string,
   account: PaperAccount,
   newTrade?: PaperTrade,
 ) {
@@ -144,17 +152,18 @@ export async function savePaperAccount(
   const statements = [
     db.prepare(
       `UPDATE paper_accounts SET starting_balance = ?, cash = ?, daily_limit = ?,
-        order_size = ?, minimum_confidence = ?, execution_drag_bps = ?,
+        order_size = ?, risk_level = ?, minimum_confidence = ?, execution_drag_bps = ?,
         updated_at = ?, version = version + 1 WHERE id = ?`,
     ).bind(
       account.startingBalance,
       account.cash,
       account.dailyLimit,
       account.orderSize,
+      account.riskLevel,
       account.minimumConfidence,
       account.executionDragBps,
       now,
-      ACCOUNT_ID,
+      accountId,
     ),
     ...symbols.map((symbol) =>
       db.prepare(
@@ -162,7 +171,7 @@ export async function savePaperAccount(
          VALUES (?, ?, ?, ?)
          ON CONFLICT(account_id, symbol) DO UPDATE SET
            quantity = excluded.quantity, cost_basis = excluded.cost_basis`,
-      ).bind(ACCOUNT_ID, symbol, account.positions[symbol].quantity, account.positions[symbol].costBasis),
+      ).bind(accountId, symbol, account.positions[symbol].quantity, account.positions[symbol].costBasis),
     ),
   ];
 
@@ -176,7 +185,7 @@ export async function savePaperAccount(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         newTrade.id,
-        ACCOUNT_ID,
+        accountId,
         newTrade.signalId,
         newTrade.symbol,
         newTrade.side,
@@ -196,32 +205,51 @@ export async function savePaperAccount(
   await db.batch(statements);
 }
 
-export async function resetPaperAccount(db: D1Database, startingBalance: number, dailyLimit: number) {
+export async function resetPaperAccount(db: D1Database, accountId: string, startingBalance: number, dailyLimit: number) {
   const account = createPaperAccount(startingBalance, dailyLimit);
   await db.batch([
-    db.prepare("DELETE FROM paper_trades WHERE account_id = ?").bind(ACCOUNT_ID),
-    db.prepare("DELETE FROM portfolio_snapshots WHERE account_id = ?").bind(ACCOUNT_ID),
+    db.prepare("DELETE FROM paper_trades WHERE account_id = ?").bind(accountId),
+    db.prepare("DELETE FROM portfolio_snapshots WHERE account_id = ?").bind(accountId),
+    db.prepare("DELETE FROM paper_cash_flows WHERE account_id = ?").bind(accountId),
     db.prepare(
       `UPDATE paper_accounts SET starting_balance = ?, cash = ?, daily_limit = ?,
-        order_size = ?, minimum_confidence = ?, execution_drag_bps = ?,
+        order_size = ?, risk_level = ?, minimum_confidence = ?, execution_drag_bps = ?,
         created_at = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
     ).bind(
       account.startingBalance,
       account.cash,
       account.dailyLimit,
       account.orderSize,
+      account.riskLevel,
       account.minimumConfidence,
       account.executionDragBps,
       account.createdAt,
       account.createdAt,
-      ACCOUNT_ID,
+      accountId,
     ),
     ...symbols.map((symbol) =>
       db.prepare("UPDATE paper_positions SET quantity = 0, cost_basis = 0 WHERE account_id = ? AND symbol = ?")
-        .bind(ACCOUNT_ID, symbol),
+        .bind(accountId, symbol),
     ),
+    db.prepare(
+      "INSERT INTO paper_cash_flows (id, account_id, amount, kind, note, created_at) VALUES (?, ?, ?, 'reset', 'Paper account reset', ?)",
+    ).bind(`reset:${accountId}:${account.createdAt}`, accountId, startingBalance, account.createdAt),
   ]);
   return account;
+}
+
+export async function depositPaperFunds(db: D1Database, accountId: string, amount: number) {
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare(
+      `UPDATE paper_accounts SET starting_balance = starting_balance + ?, cash = cash + ?,
+       updated_at = ?, version = version + 1 WHERE id = ?`,
+    ).bind(amount, amount, now, accountId),
+    db.prepare(
+      "INSERT INTO paper_cash_flows (id, account_id, amount, kind, note, created_at) VALUES (?, ?, ?, 'deposit', 'One-time paper cash deposit', ?)",
+    ).bind(`deposit:${accountId}:${now}`, accountId, amount, now),
+  ]);
+  return loadPaperAccount(db, accountId);
 }
 
 export async function saveIngestion(
@@ -344,10 +372,11 @@ export async function loadRecentEvents(db: D1Database, limit = 20): Promise<Inte
 export async function createAlert(db: D1Database, alert: AlertRecord) {
   await db.prepare(
     `INSERT OR IGNORE INTO alerts
-      (id, kind, severity, title, body, source_url, read_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, user_id, kind, severity, title, body, source_url, read_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     alert.id,
+    alert.userId,
     alert.kind,
     alert.severity,
     alert.title,
@@ -358,12 +387,13 @@ export async function createAlert(db: D1Database, alert: AlertRecord) {
   ).run();
 }
 
-export async function loadAlerts(db: D1Database, limit = 20): Promise<AlertRecord[]> {
+export async function loadAlerts(db: D1Database, userId: string, limit = 20): Promise<AlertRecord[]> {
   const result = await db.prepare(
-    `SELECT id, kind, severity, title, body, source_url, read_at, created_at
-     FROM alerts ORDER BY created_at DESC LIMIT ?`,
-  ).bind(limit).all<{
+    `SELECT id, user_id, kind, severity, title, body, source_url, read_at, created_at
+     FROM alerts WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
+  ).bind(userId, limit).all<{
     id: string;
+    user_id: AlertRecord["userId"];
     kind: string;
     severity: AlertRecord["severity"];
     title: string;
@@ -374,6 +404,7 @@ export async function loadAlerts(db: D1Database, limit = 20): Promise<AlertRecor
   }>();
   return result.results.map((row) => ({
     id: row.id,
+    userId: row.user_id,
     kind: row.kind,
     severity: row.severity,
     title: row.title,
@@ -384,8 +415,9 @@ export async function loadAlerts(db: D1Database, limit = 20): Promise<AlertRecor
   }));
 }
 
-export async function markAlertsRead(db: D1Database) {
-  await db.prepare("UPDATE alerts SET read_at = ? WHERE read_at IS NULL").bind(new Date().toISOString()).run();
+export async function markAlertsRead(db: D1Database, userId: string) {
+  await db.prepare("UPDATE alerts SET read_at = ? WHERE user_id = ? AND read_at IS NULL")
+    .bind(new Date().toISOString(), userId).run();
 }
 
 export async function getSetting(db: D1Database, key: string, fallback: string) {
@@ -407,6 +439,7 @@ export async function setSettings(db: D1Database, entries: Record<string, string
 
 export async function savePortfolioSnapshot(
   db: D1Database,
+  accountId: string,
   snapshot: {
     equity: number;
     cash: number;
@@ -422,8 +455,8 @@ export async function savePortfolioSnapshot(
       (id, account_id, equity, cash, market_value, realized_pnl, unrealized_pnl, btc_price, captured_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
-    `${ACCOUNT_ID}:${snapshot.capturedAt}`,
-    ACCOUNT_ID,
+    `${accountId}:${snapshot.capturedAt}`,
+    accountId,
     snapshot.equity,
     snapshot.cash,
     snapshot.marketValue,
@@ -434,11 +467,11 @@ export async function savePortfolioSnapshot(
   ).run();
 }
 
-export async function getPortfolioHistory(db: D1Database) {
+export async function getPortfolioHistory(db: D1Database, accountId: string) {
   const result = await db.prepare(
     `SELECT equity, btc_price, captured_at FROM portfolio_snapshots
      WHERE account_id = ? ORDER BY captured_at ASC LIMIT 5000`,
-  ).bind(ACCOUNT_ID).all<{ equity: number; btc_price: number; captured_at: string }>();
+  ).bind(accountId).all<{ equity: number; btc_price: number; captured_at: string }>();
   return result.results;
 }
 

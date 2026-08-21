@@ -1,4 +1,4 @@
-import type { WorkerEnv } from "./types";
+import type { AppUserId, WorkerEnv } from "./types";
 
 const COINBASE_HOST = "api.coinbase.com";
 
@@ -191,17 +191,17 @@ async function getCoinbaseConnection(label: string, credentials: CoinbaseCredent
   }
 }
 
-export async function getCoinbaseStatus(env: WorkerEnv) {
-  const connections = await Promise.all([
-    getCoinbaseConnection("Justin", {
+export async function getCoinbaseStatus(env: WorkerEnv, userId: AppUserId) {
+  const connection = userId === "justin"
+    ? await getCoinbaseConnection("Justin", {
       keyName: env.COINBASE_PRIMARY_API_KEY_NAME ?? env.COINBASE_API_KEY_NAME,
       privateKey: env.COINBASE_PRIMARY_API_PRIVATE_KEY ?? env.COINBASE_API_PRIVATE_KEY,
-    }),
-    getCoinbaseConnection("Gatcho", {
+    })
+    : await getCoinbaseConnection("Gatcho", {
       keyName: env.COINBASE_BROTHER_API_KEY_NAME,
       privateKey: env.COINBASE_BROTHER_API_PRIVATE_KEY,
-    }),
-  ]);
+    });
+  const connections = [connection];
   const configured = connections.some((connection) => connection.configured);
   const connected = connections.some((connection) => connection.connected);
   const unsafeScope = connections.some((connection) => connection.permissions.canTrade || connection.permissions.canTransfer);
@@ -221,7 +221,7 @@ export async function getCoinbaseStatus(env: WorkerEnv) {
       ? "At least one key has Trade or Transfer scope; remove it during paper validation."
       : connected
         ? "Read-only Coinbase validation is active; real order submission remains unavailable."
-        : "Neither Coinbase account has been connected yet.",
+        : "Your Coinbase account has not been connected yet.",
     connections,
   };
 }
