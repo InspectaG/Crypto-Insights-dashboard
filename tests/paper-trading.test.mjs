@@ -41,6 +41,19 @@ test("paper buys spend fake cash and enforce the daily limit", () => {
   assert.equal(blocked.account.cash, 750);
 });
 
+test("paper accounts support a one-dollar daily limit", () => {
+  const account = createPaperAccount(100, 1, start);
+  assert.equal(account.orderSize, 1);
+
+  const first = buy(account, { grossValue: 1 });
+  assert.equal(first.ok, true);
+  assert.equal(todayBuySpend(first.account, start), 1);
+
+  const blocked = buy(first.account, { grossValue: 1, signalId: "second-dollar" });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /daily paper-buy limit reached/i);
+});
+
 test("paper sells realize outcomes after execution drag", () => {
   const account = createPaperAccount(1_000, 500, start);
   const opened = buy(account);

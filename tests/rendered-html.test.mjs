@@ -44,6 +44,7 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Performance comparison/);
   assert.match(html, /Risk tolerance/);
   assert.match(html, /Daily investment cap/);
+  assert.match(html, /minimum is \$1\/day/i);
   assert.match(html, /One-time paper cash injection/);
   assert.match(html, /not financial advice/i);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);

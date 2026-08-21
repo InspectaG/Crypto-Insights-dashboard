@@ -475,7 +475,7 @@ export default function Home() {
 
   async function resetPaperAccount() {
     const startingBalance = Math.max(100, Number(fundAmount) || 0);
-    const dailyLimit = Math.max(10, Number(paperAccount.dailyLimit) || 0);
+    const dailyLimit = Math.max(1, Number(paperAccount.dailyLimit) || 0);
     setSyncing(true);
     try {
       const response = await fetch("/api/paper/reset", {
@@ -838,15 +838,15 @@ export default function Home() {
                   <input
                     aria-label="Daily paper investment cap"
                     max={Math.max(10_000, paperAccount.startingBalance)}
-                    min="50"
-                    step="50"
+                    min="1"
+                    step="1"
                     type="range"
                     value={Math.min(Math.max(10_000, paperAccount.startingBalance), paperAccount.dailyLimit)}
                     onChange={(event) => setPaperAccount((account) => ({ ...account, dailyLimit: Number(event.target.value) }))}
                     onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                     onPointerUp={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                   />
-                  <small>Paper buys stop automatically when your personal daily cap is exhausted.</small>
+                  <small>Paper buys stop automatically when your personal daily cap is exhausted; the minimum is $1/day.</small>
                 </div>
                 <div className="fieldGrid">
                   <label>
@@ -864,8 +864,8 @@ export default function Home() {
                     <span>Daily buy limit</span>
                     <span className="moneyInput"><i>$</i><input
                       aria-label="Paper daily buy limit"
-                      min="10"
-                      step="50"
+                      min="1"
+                      step="1"
                       type="number"
                       value={paperAccount.dailyLimit}
                       onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
