@@ -54,6 +54,10 @@ its preview deployments with Google authentication and an exact email allowlist:
 - `gatcho@gmail.com`
 - `gatchek@gmail.com`
 
+The production Worker disables its public `workers.dev` and preview URLs so the
+Google Access policy cannot be bypassed through an alternate hostname. The app
+does not add a second account system after Cloudflare authenticates the user.
+
 See [docs/cloudflare-deployment.md](docs/cloudflare-deployment.md) for the
 deployment and verification checklist.
 
