@@ -39,7 +39,7 @@ const emptyStatus: CoinbaseStatus = {
 };
 
 export default function CoinbaseSettings() {
-  const [viewer, setViewer] = useState<Viewer>({ id: "justin", email: "gatchek@gmail.com", displayName: "Justin" });
+  const [viewer, setViewer] = useState<Viewer | null>(null);
   const [coinbase, setCoinbase] = useState<CoinbaseStatus>(emptyStatus);
   const [keyName, setKeyName] = useState("");
   const [privateKey, setPrivateKey] = useState("");
@@ -68,6 +68,7 @@ export default function CoinbaseSettings() {
 
   async function saveConnection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!viewer) return;
     setSaving(true);
     setMessage("Validating the key with Coinbase…");
     try {
@@ -91,6 +92,7 @@ export default function CoinbaseSettings() {
   }
 
   async function removeConnection() {
+    if (!viewer) return;
     if (!window.confirm(`Remove ${viewer.displayName}'s saved Coinbase connection?`)) return;
     setSaving(true);
     try {
@@ -112,6 +114,8 @@ export default function CoinbaseSettings() {
   }
 
   const connection = coinbase.connections?.[0];
+  const viewerName = viewer?.displayName ?? "Verifying account";
+  const viewerEmail = viewer?.email ?? "Checking your Google identity…";
 
   return (
     <main className="shell settingsShell">
@@ -124,7 +128,8 @@ export default function CoinbaseSettings() {
         </a>
         <div className="topbarRight">
           <span className="demoPill">PRIVATE CONNECTION SETTINGS</span>
-          <span className="viewerName">{viewer.displayName}</span>
+          <span className="viewerIdentity" aria-live="polite"><strong>{viewerName}</strong><small>{viewerEmail}</small></span>
+          <a className="accountSwitch" href="https://crypto.gatchek.com/cdn-cgi/access/logout">SWITCH USER</a>
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a className="backLink" href="/">BACK TO DASHBOARD</a>
         </div>
@@ -135,7 +140,7 @@ export default function CoinbaseSettings() {
           <div>
             <p className="eyebrow">PRIVATE USER SETTINGS</p>
             <h1 id="settings-title">Coinbase connection</h1>
-            <p>Connect only {viewer.displayName}&apos;s Coinbase account. Your brother cannot view or use these credentials.</p>
+            <p>Connect only {viewerName}&apos;s Coinbase account. Your brother cannot view or use these credentials.</p>
           </div>
           <span className={`statePill ${coinbase.connected ? "safe" : "off"}`}>
             {loading ? "CHECKING" : coinbase.connected ? "VERIFIED" : "NOT CONNECTED"}
@@ -147,7 +152,7 @@ export default function CoinbaseSettings() {
             <div className="credentialSummary">
               <div>
                 <span className={`connectionDot ${coinbase.connected ? "connected" : ""}`} />
-                <p><strong>{viewer.email}</strong><small>{coinbase.message}</small></p>
+                <p><strong>{viewerEmail}</strong><small>{coinbase.message}</small></p>
               </div>
               {connection?.keyHint && <code>{connection.keyHint}</code>}
             </div>
@@ -158,6 +163,7 @@ export default function CoinbaseSettings() {
                 aria-label="Coinbase API key name"
                 autoCapitalize="none"
                 autoComplete="off"
+                disabled={loading || saving || !viewer}
                 placeholder="organizations/…/apiKeys/…"
                 spellCheck={false}
                 value={keyName}
@@ -171,6 +177,7 @@ export default function CoinbaseSettings() {
                 aria-label="Coinbase ECDSA private key"
                 autoCapitalize="none"
                 autoComplete="off"
+                disabled={loading || saving || !viewer}
                 placeholder={"-----BEGIN EC PRIVATE KEY-----\n…\n-----END EC PRIVATE KEY-----"}
                 rows={6}
                 spellCheck={false}
@@ -182,7 +189,7 @@ export default function CoinbaseSettings() {
             <div className="credentialActions">
               <button
                 className="paperTradeButton"
-                disabled={loading || saving || !keyName.trim() || !privateKey.trim()}
+                disabled={loading || saving || !viewer || !keyName.trim() || !privateKey.trim()}
                 type="submit"
               >
                 {saving ? "Validating…" : coinbase.configured ? "Validate and replace" : "Validate and connect"}

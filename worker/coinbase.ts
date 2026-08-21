@@ -224,7 +224,7 @@ export async function validateCoinbaseCredentials(label: string, credentials: Co
 }
 
 export async function getCoinbaseStatus(env: WorkerEnv, userId: AppUserId) {
-  const label = userId === "justin" ? "Justin" : "Gatcho";
+  const label = userId === "justin" ? "Justin" : "Evan";
   let connection;
   if (env.COINBASE_CREDENTIALS_ENCRYPTION_KEY) {
     try {

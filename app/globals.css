@@ -43,7 +43,11 @@ button { color: inherit; }
 .brand b { color: #77839f; font-weight: 500; }
 .brandMark { align-items: center; background: linear-gradient(145deg, #7aa2ff, #b7c9ff); border-radius: 7px; color: #071020; display: flex; font-weight: 900; height: 30px; justify-content: center; letter-spacing: 0; width: 30px; }
 .topbarRight { align-items: center; display: flex; gap: 18px; }
-.viewerName { color: #aab5cc; font-size: 10px; }
+.viewerIdentity { align-items: flex-end; display: flex; flex-direction: column; gap: 2px; }
+.viewerIdentity strong { color: #c2ccdf; font-size: 10px; font-weight: 600; }
+.viewerIdentity small { color: #65718a; font-family: var(--font-geist-mono); font-size: 7px; }
+.accountSwitch { color: #7f8ba3; font-family: var(--font-geist-mono); font-size: 7px; letter-spacing: .1em; text-decoration: none; }
+.accountSwitch:hover { color: var(--blue); }
 .settingsLink { color: #7f8ba3; font-family: var(--font-geist-mono); font-size: 8px; letter-spacing: .12em; text-decoration: none; }.settingsLink:hover { color: var(--blue); }
 .backLink { color: var(--blue); font-family: var(--font-geist-mono); font-size: 8px; letter-spacing: .1em; text-decoration: none; }.backLink:hover { text-decoration: underline; }
 .status, .demoPill { color: #96a0b8; font-family: var(--font-geist-mono); font-size: 10px; letter-spacing: .12em; }
@@ -140,7 +144,8 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .budgetTrack i { background: var(--blue); border-radius: inherit; display: block; height: 100%; }
 .paperGrid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1.65fr) minmax(295px, .65fr); }
 .paperAccountPanel { padding: 22px; }
-.paperControls { display: grid; gap: 26px; grid-template-columns: minmax(0, 1.15fr) minmax(250px, .85fr); }
+.paperControls { border: 0; display: grid; gap: 26px; grid-template-columns: minmax(0, 1.15fr) minmax(250px, .85fr); margin: 0; min-inline-size: 0; padding: 0; }
+.paperControls:disabled { opacity: .7; }
 .paperFunding { border-right: 1px solid var(--line); padding-right: 26px; }
 .subhead { align-items: flex-start; display: flex; justify-content: space-between; }
 .subhead h3, .tableTitle h3 { font-size: 14px; font-weight: 560; margin: 0; }
@@ -286,6 +291,7 @@ footer .appVersion { margin-left: auto; white-space: nowrap; }
   .shell { padding-inline: 14px; }
   .topbar { height: 62px; }.status { display: none; }
   .settingsLink { display: none; }
+  .accountSwitch { display: none; }
   .hero { padding-top: 38px; }
   .signalPanel, .scorePanel { padding: 18px; }
   .confidenceDial { height: 88px; width: 88px; }

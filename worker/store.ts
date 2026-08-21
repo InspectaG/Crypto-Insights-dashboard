@@ -65,6 +65,10 @@ export async function ensureDatabase(db: D1Database) {
            VALUES (?, ?, ?, ?, ?)`,
         ).bind(user.id, user.email, user.displayName, user.accountId, now)),
         ...appUsers.map((user) => db.prepare(
+          `UPDATE app_users SET email = ?, display_name = ?, paper_account_id = ?
+           WHERE id = ?`,
+        ).bind(user.email, user.displayName, user.accountId, user.id)),
+        ...appUsers.map((user) => db.prepare(
           `INSERT OR IGNORE INTO paper_accounts (
             id, user_id, starting_balance, cash, daily_limit, order_size, risk_level,
             minimum_confidence, execution_drag_bps, created_at, updated_at, version

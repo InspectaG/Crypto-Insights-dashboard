@@ -39,6 +39,10 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Confidence measures evidence agreement/i);
   assert.match(html, /Signal feed/);
   assert.match(html, /CONNECTING LIVE SOURCES/);
+  assert.match(html, /Verifying account/);
+  assert.match(html, /Checking Google identity/);
+  assert.doesNotMatch(html, />Justin</);
+  assert.match(html, /href="https:\/\/crypto\.gatchek\.com\/cdn-cgi\/access\/logout"/);
   assert.match(html, /Paper autopilot/);
   assert.match(html, /Performance benchmark/);
   assert.match(html, /Signal evidence scorecard/);
@@ -83,6 +87,10 @@ test("keeps Coinbase credentials on a separate settings page", async () => {
   assert.match(html, /ECDSA private key/);
   assert.match(html, /Write-only secret/);
   assert.match(html, /BACK TO DASHBOARD/);
+  assert.match(html, /Verifying account/);
+  assert.match(html, /Checking your Google identity/);
+  assert.doesNotMatch(html, />Justin</);
+  assert.match(html, /href="https:\/\/crypto\.gatchek\.com\/cdn-cgi\/access\/logout"/);
 });
 
 test("uses full-page links between the dashboard and settings", async () => {

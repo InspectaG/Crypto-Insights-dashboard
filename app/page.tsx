@@ -333,7 +333,7 @@ export default function Home() {
   const [assetData, setAssetData] = useState(fallbackAssets);
   const [marketSource, setMarketSource] = useState<"live" | "fallback">("fallback");
   const [paperAccount, setPaperAccount] = useState(() => createPaperAccount());
-  const [viewer, setViewer] = useState<Viewer>({ id: "justin", email: "gatchek@gmail.com", displayName: "Justin" });
+  const [viewer, setViewer] = useState<Viewer | null>(null);
   const [comparison, setComparison] = useState<ComparisonProfile[]>([]);
   const [paperReady, setPaperReady] = useState(false);
   const [profiles, setProfiles] = useState(signalProfiles);
@@ -413,11 +413,10 @@ export default function Home() {
         comparison?: ComparisonProfile[];
       };
       if (!response.ok) throw new Error(payload.error ?? "Dashboard sync failed");
-      if (payload.paperAccount) {
-        setPaperAccount(payload.paperAccount);
-        setFundAmount(payload.settings?.paperStartingCash ?? payload.paperAccount.startingBalance);
-      }
-      if (payload.user) setViewer(payload.user);
+      if (!payload.user || !payload.paperAccount) throw new Error("Authenticated account data is unavailable");
+      setViewer(payload.user);
+      setPaperAccount(payload.paperAccount);
+      setFundAmount(payload.settings?.paperStartingCash ?? payload.paperAccount.startingBalance);
       if (payload.comparison) setComparison(payload.comparison);
       if (payload.market?.length) {
         setAssetData(payload.market.map((asset) => ({
@@ -447,7 +446,7 @@ export default function Home() {
       setPaperReady(true);
     } catch (error) {
       setPaperMessage(error instanceof Error ? error.message : "Dashboard sync failed");
-      setPaperReady(true);
+      setPaperSettingsStatus("error");
     } finally {
       if (showProgress) setSyncing(false);
     }
@@ -486,6 +485,8 @@ export default function Home() {
     (symbol) => paperAccount.positions[symbol].quantity > 0,
   );
   const unreadAlerts = alerts.filter((alert) => !alert.readAt);
+  const viewerName = viewer?.displayName ?? "Verifying account";
+  const viewerEmail = viewer?.email ?? "Checking Google identity…";
   const coinbaseConnections = coinbase.connections ?? [{
     label: "Coinbase",
     configured: coinbase.configured,
@@ -579,7 +580,7 @@ export default function Home() {
       const result = await response.json() as { error?: string; paperAccount?: PaperAccount };
       if (!response.ok || !result.paperAccount) throw new Error(result.error ?? "Reset failed");
       setPaperAccount(result.paperAccount);
-      setPaperMessage(`New ${money(startingBalance)} shared paper account funded. Previous simulated history was cleared.`);
+      setPaperMessage(`New ${money(startingBalance)} paper account funded for ${viewerName}. Previous simulated history was cleared.`);
       await syncControlPlane();
     } catch (error) {
       setPaperMessage(error instanceof Error ? error.message : "Reset failed");
@@ -601,7 +602,7 @@ export default function Home() {
       const result = await response.json() as { error?: string; paperAccount?: PaperAccount };
       if (!response.ok || !result.paperAccount) throw new Error(result.error ?? "Deposit failed");
       setPaperAccount(result.paperAccount);
-      setPaperMessage(`${money(amount)} added once to ${viewer.displayName}'s paper cash without clearing history.`);
+      setPaperMessage(`${money(amount)} added once to ${viewerName}'s paper cash without clearing history.`);
       await syncControlPlane();
     } catch (error) {
       setPaperMessage(error instanceof Error ? error.message : "Deposit failed");
@@ -663,9 +664,10 @@ export default function Home() {
           <span className="status"><i /> SYSTEM ONLINE</span>
           {/* Full-page navigation avoids an unreliable client-router transition on the hosted build. */}
           <a className="settingsLink" href="/settings">SETTINGS</a>
-          <span className="viewerName">{viewer.displayName}</span>
-          <button className="avatar" aria-label={`${viewer.displayName} account`}>
-            {viewer.displayName.slice(0, 2).toUpperCase()}
+          <span className="viewerIdentity" aria-live="polite"><strong>{viewerName}</strong><small>{viewerEmail}</small></span>
+          <a className="accountSwitch" href="https://crypto.gatchek.com/cdn-cgi/access/logout">SWITCH USER</a>
+          <button className="avatar" aria-label={`${viewerName} account`} disabled={!viewer}>
+            {viewer ? viewer.displayName.slice(0, 2).toUpperCase() : "…"}
           </button>
         </div>
       </header>
@@ -809,7 +811,7 @@ export default function Home() {
         <div className="paperTitleRow">
           <div>
             <p className="eyebrow">FORWARD TEST · PAPER MONEY ONLY</p>
-            <h2>{viewer.displayName}&apos;s paper trading lab</h2>
+            <h2>{viewerName}&apos;s paper trading lab</h2>
             <p>
               Simulate signal-driven orders, enforce a daily buy limit, and measure
               what the strategy would have earned or lost without touching Coinbase.
@@ -878,11 +880,11 @@ export default function Home() {
 
         <div className="paperGrid">
           <article className="panel paperAccountPanel">
-            <div className="paperControls">
+            <fieldset className="paperControls" disabled={!paperReady || !viewer}>
               <div className="paperFunding">
                 <div className="subhead">
                   <div>
-                    <p className="eyebrow">{viewer.displayName.toUpperCase()} · PRIVATE CONTROLS</p>
+                    <p className="eyebrow">{viewerName.toUpperCase()} · PRIVATE CONTROLS</p>
                     <h3>Risk, funding & guardrails</h3>
                   </div>
                   <button className="ghostButton" type="button" onClick={resetPaperAccount}>
@@ -972,7 +974,7 @@ export default function Home() {
                 </div>
                 <p className={`autoSaveNote ${paperSettingsStatus}`} aria-live="polite">
                   {paperSettingsStatus === "saving" && "Saving your paper settings…"}
-                  {paperSettingsStatus === "saved" && `Saved for ${viewer.displayName}. Starting cash applies when you choose Reset & fund.`}
+                  {paperSettingsStatus === "saved" && `Saved for ${viewerName}. Starting cash applies when you choose Reset & fund.`}
                   {paperSettingsStatus === "error" && "Settings could not be saved. Try changing a value again."}
                   {paperSettingsStatus === "loading" && "Loading your saved paper settings…"}
                 </p>
@@ -1025,7 +1027,7 @@ export default function Home() {
                 </button>
                 <p className="paperMessage" role="status">{paperMessage}</p>
               </div>
-            </div>
+            </fieldset>
 
             <div className="paperTables">
               <div>
@@ -1215,15 +1217,15 @@ export default function Home() {
               <span className={`statePill ${autoPaperEnabled ? "safe" : "off"}`}>{autoPaperEnabled ? "ENABLED" : "PAUSED"}</span>
             </div>
             <div className="switchRow">
-              <span><strong>{viewer.displayName}&apos;s automatic paper buys and sells</strong><small>Buys stop at the daily cap; sells are limited to held positions</small></span>
-              <input aria-label="Automatic paper decisions" checked={autoPaperEnabled} type="checkbox" onChange={(event) => toggleAutoPaper(event.target.checked)} />
+              <span><strong>{viewerName}&apos;s automatic paper buys and sells</strong><small>Buys stop at the daily cap; sells are limited to held positions</small></span>
+              <input aria-label="Automatic paper decisions" checked={autoPaperEnabled} disabled={!paperReady || !viewer} type="checkbox" onChange={(event) => toggleAutoPaper(event.target.checked)} />
             </div>
             <dl className="operationFacts">
               <div><dt>Last status</dt><dd>{automation?.status ?? "INITIALIZING"}</dd></div>
               <div><dt>Last run</dt><dd>{automation ? relativeTime(automation.startedAt) : "—"}</dd></div>
               <div><dt>Evidence</dt><dd>{automation ? `${automation.events} events / ${automation.signals} signals` : "—"}</dd></div>
             </dl>
-            <button className="paperTradeButton" disabled={syncing} type="button" onClick={() => void runNow()}>
+            <button className="paperTradeButton" disabled={syncing || !paperReady || !viewer} type="button" onClick={() => void runNow()}>
               {syncing ? "Running…" : "Run intelligence cycle now"}
             </button>
           </article>
