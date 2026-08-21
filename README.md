@@ -11,6 +11,10 @@ before paid data vendors or automated trading are introduced.
   public Coinbase Exchange product statistics endpoint.
 - Explainable signal direction, confidence, horizon, evidence, and invalidation.
 - Whale, social, market, and news event feed with bias filters.
+- Browser-persistent paper portfolio with configurable starting cash, order size,
+  confidence threshold, and a hard daily buy limit.
+- Simulated execution drag, open-position mark-to-market results, realized P/L,
+  win rate, profit factor, and a controlled strategy-review loop.
 - Responsive, keyboard-accessible dashboard UI.
 - Deterministic fallback data when the upstream market feed is unavailable.
 - Search-engine exclusion metadata and an explicit simulated-data indicator.
@@ -64,3 +68,16 @@ deployment and verification checklist.
 The next data milestone is to replace each fixture category independently,
 retain source links and timestamps, and backtest thresholds before alerts are
 used for real decisions.
+
+## Paper-trading boundaries
+
+Paper trades are forward tests and never submit an order to Coinbase. The MVP
+stores its ledger in the current browser, prevents the same signal from being
+traded twice in a 15-minute window, and blocks buys once the configured daily
+limit is spent. It waits for at least ten closed trades before proposing a
+single threshold experiment; it does not silently rewrite strategy rules.
+
+A shared, cross-device paper ledger should use an authenticated database after
+Cloudflare Access is active. Real trading remains a separate milestone and
+requires exchange-side permissions, independent server-side limits, a kill
+switch, and explicit deployment approval.

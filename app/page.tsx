@@ -1,11 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  createPaperAccount,
+  executePaperTrade,
+  isPaperAccount,
+  learningSummary,
+  portfolioSnapshot,
+  todayBuySpend,
+  type PaperPrices,
+  type PaperSide,
+  type PaperSymbol,
+} from "../lib/paper-trading";
 
 type Bias = "bullish" | "bearish" | "neutral";
 
 type Asset = {
-  symbol: string;
+  symbol: PaperSymbol;
   name: string;
   price: string;
   change: string;
@@ -45,23 +56,26 @@ const fallbackAssets: Asset[] = [
 ];
 
 const signalProfiles: Record<
-  string,
-  { direction: string; confidence: number; horizon: string; invalidation: string }
+  PaperSymbol,
+  { direction: string; side: PaperSide; confidence: number; horizon: string; invalidation: string }
 > = {
   BTC: {
     direction: "ACCUMULATE",
+    side: "BUY",
     confidence: 78,
     horizon: "12–24 hour horizon",
     invalidation: "Signal weakens below $112,600 or if exchange inflows reverse positive.",
   },
   ETH: {
     direction: "WATCH LONG",
+    side: "BUY",
     confidence: 71,
     horizon: "8–16 hour horizon",
     invalidation: "Signal weakens if social velocity falls below baseline or ETH loses relative strength.",
   },
   SOL: {
     direction: "REDUCE RISK",
+    side: "SELL",
     confidence: 69,
     horizon: "4–12 hour horizon",
     invalidation: "Bearish pressure eases if spot volume confirms a reclaim above the local range.",
@@ -118,11 +132,38 @@ const filters: Array<{ label: string; value: "all" | Bias }> = [
   { label: "Neutral", value: "neutral" },
 ];
 
+const paperSymbols: PaperSymbol[] = ["BTC", "ETH", "SOL"];
+const PAPER_STORAGE_KEY = "gatchek-paper-account-v1";
+
+function numberFromPrice(price: string) {
+  return Number(price.replace(/[^0-9.]/g, ""));
+}
+
+function money(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function signedMoney(value: number) {
+  return `${value >= 0 ? "+" : "−"}${money(Math.abs(value))}`;
+}
+
 export default function Home() {
   const [filter, setFilter] = useState<"all" | Bias>("all");
-  const [activeAsset, setActiveAsset] = useState("BTC");
+  const [activeAsset, setActiveAsset] = useState<PaperSymbol>("BTC");
   const [assetData, setAssetData] = useState(fallbackAssets);
   const [marketSource, setMarketSource] = useState<"live" | "fallback">("fallback");
+  const [paperAccount, setPaperAccount] = useState(() => createPaperAccount());
+  const [paperReady, setPaperReady] = useState(false);
+  const [paperSide, setPaperSide] = useState<PaperSide>("BUY");
+  const [fundAmount, setFundAmount] = useState(10_000);
+  const [fundDailyLimit, setFundDailyLimit] = useState(1_000);
+  const [paperMessage, setPaperMessage] = useState(
+    "Forward test is ready. No real orders or money are involved.",
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -152,11 +193,93 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    const hydratePaperAccount = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(PAPER_STORAGE_KEY);
+        if (saved) {
+          const parsed: unknown = JSON.parse(saved);
+          if (isPaperAccount(parsed)) {
+            setPaperAccount(parsed);
+            setFundAmount(parsed.startingBalance);
+            setFundDailyLimit(parsed.dailyLimit);
+          }
+        }
+      } catch {
+        // Corrupt or unavailable storage should never prevent the dashboard from loading.
+      } finally {
+        setPaperReady(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(hydratePaperAccount);
+  }, []);
+
+  useEffect(() => {
+    if (!paperReady) return;
+    window.localStorage.setItem(PAPER_STORAGE_KEY, JSON.stringify(paperAccount));
+  }, [paperAccount, paperReady]);
+
   const visibleEvents = useMemo(
     () => events.filter((event) => filter === "all" || event.bias === filter),
     [filter],
   );
   const activeProfile = signalProfiles[activeAsset];
+  const paperPrices = useMemo(
+    () =>
+      Object.fromEntries(
+        assetData.map((asset) => [asset.symbol, numberFromPrice(asset.price)]),
+      ) as PaperPrices,
+    [assetData],
+  );
+  const portfolio = useMemo(
+    () => portfolioSnapshot(paperAccount, paperPrices),
+    [paperAccount, paperPrices],
+  );
+  const learning = useMemo(() => learningSummary(paperAccount), [paperAccount]);
+  const spentToday = todayBuySpend(paperAccount);
+  const dailyRemaining = Math.max(0, paperAccount.dailyLimit - spentToday);
+  const openPositions = paperSymbols.filter(
+    (symbol) => paperAccount.positions[symbol].quantity > 0,
+  );
+
+  function selectAsset(symbol: PaperSymbol) {
+    setActiveAsset(symbol);
+    setPaperSide(signalProfiles[symbol].side);
+  }
+
+  function runPaperTrade() {
+    const result = executePaperTrade(paperAccount, {
+      symbol: activeAsset,
+      side: paperSide,
+      grossValue: paperAccount.orderSize,
+      marketPrice: paperPrices[activeAsset],
+      confidence: activeProfile.confidence,
+      rationale: `${activeProfile.direction} · ${activeProfile.horizon}`,
+    });
+
+    if (!result.ok) {
+      setPaperMessage(result.message);
+      return;
+    }
+
+    setPaperAccount(result.account);
+    setPaperMessage(
+      `${result.trade.side} simulated for ${result.trade.symbol} at ${money(result.trade.marketPrice)}.`,
+    );
+  }
+
+  function resetPaperAccount() {
+    const startingBalance = Math.max(100, Number(fundAmount) || 0);
+    const dailyLimit = Math.min(
+      startingBalance,
+      Math.max(10, Number(fundDailyLimit) || 0),
+    );
+    setPaperAccount(createPaperAccount(startingBalance, dailyLimit));
+    setFundAmount(startingBalance);
+    setFundDailyLimit(dailyLimit);
+    setPaperMessage(`New ${money(startingBalance)} paper account funded. Previous simulated history was cleared.`);
+  }
 
   return (
     <main className="shell">
@@ -197,7 +320,7 @@ export default function Home() {
           <button
             className={`assetCard ${activeAsset === asset.symbol ? "active" : ""}`}
             key={asset.symbol}
-            onClick={() => setActiveAsset(asset.symbol)}
+            onClick={() => selectAsset(asset.symbol)}
             aria-pressed={activeAsset === asset.symbol}
           >
             <div className="assetHead">
@@ -300,6 +423,242 @@ export default function Home() {
             <p>Three independent sources agree. Confidence is reduced by elevated leverage.</p>
           </div>
         </aside>
+      </section>
+
+      <section className="paperSection" id="paper">
+        <div className="paperTitleRow">
+          <div>
+            <p className="eyebrow">FORWARD TEST · PAPER MONEY ONLY</p>
+            <h2>Paper trading lab</h2>
+            <p>
+              Simulate signal-driven orders, enforce a daily buy limit, and measure
+              what the strategy would have earned or lost without touching Coinbase.
+            </p>
+          </div>
+          <span className="paperBadge">NO REAL FUNDS</span>
+        </div>
+
+        <div className="paperMetrics" aria-label="Paper portfolio summary">
+          <article>
+            <span>EQUITY</span>
+            <strong>{money(portfolio.equity)}</strong>
+            <small className={portfolio.totalPnl >= 0 ? "positive" : "negative"}>
+              {signedMoney(portfolio.totalPnl)} all time
+            </small>
+          </article>
+          <article>
+            <span>TOTAL RETURN</span>
+            <strong className={portfolio.returnPct >= 0 ? "positive" : "negative"}>
+              {portfolio.returnPct >= 0 ? "+" : ""}{portfolio.returnPct.toFixed(2)}%
+            </strong>
+            <small>mark-to-market</small>
+          </article>
+          <article>
+            <span>AVAILABLE CASH</span>
+            <strong>{money(paperAccount.cash)}</strong>
+            <small>{money(portfolio.marketValue)} invested</small>
+          </article>
+          <article>
+            <span>DAILY BUY BUDGET</span>
+            <strong>{money(dailyRemaining)}</strong>
+            <small>{money(spentToday)} of {money(paperAccount.dailyLimit)} used</small>
+            <div className="budgetTrack" aria-hidden="true">
+              <i style={{ width: `${Math.min(100, (spentToday / paperAccount.dailyLimit) * 100)}%` }} />
+            </div>
+          </article>
+        </div>
+
+        <div className="paperGrid">
+          <article className="panel paperAccountPanel">
+            <div className="paperControls">
+              <div className="paperFunding">
+                <div className="subhead">
+                  <div>
+                    <p className="eyebrow">ACCOUNT SANDBOX</p>
+                    <h3>Funding & guardrails</h3>
+                  </div>
+                  <button className="ghostButton" type="button" onClick={resetPaperAccount}>
+                    Reset & fund
+                  </button>
+                </div>
+                <div className="fieldGrid">
+                  <label>
+                    <span>Starting cash</span>
+                    <span className="moneyInput"><i>$</i><input
+                      aria-label="Paper starting cash"
+                      min="100"
+                      step="100"
+                      type="number"
+                      value={fundAmount}
+                      onChange={(event) => setFundAmount(Number(event.target.value))}
+                    /></span>
+                  </label>
+                  <label>
+                    <span>Daily buy limit</span>
+                    <span className="moneyInput"><i>$</i><input
+                      aria-label="Paper daily buy limit"
+                      min="10"
+                      step="50"
+                      type="number"
+                      value={fundDailyLimit}
+                      onChange={(event) => setFundDailyLimit(Number(event.target.value))}
+                    /></span>
+                  </label>
+                  <label>
+                    <span>Order size</span>
+                    <span className="moneyInput"><i>$</i><input
+                      aria-label="Paper order size"
+                      min="1"
+                      step="25"
+                      type="number"
+                      value={paperAccount.orderSize}
+                      onChange={(event) => setPaperAccount((account) => ({
+                        ...account,
+                        orderSize: Math.max(0, Number(event.target.value)),
+                      }))}
+                    /></span>
+                  </label>
+                  <label>
+                    <span>Min confidence</span>
+                    <span className="percentInput"><input
+                      aria-label="Minimum signal confidence"
+                      max="100"
+                      min="1"
+                      type="number"
+                      value={paperAccount.minimumConfidence}
+                      onChange={(event) => setPaperAccount((account) => ({
+                        ...account,
+                        minimumConfidence: Math.min(100, Math.max(1, Number(event.target.value))),
+                      }))}
+                    /><i>%</i></span>
+                  </label>
+                </div>
+                <p className="guardrailNote">
+                  Buys stop automatically at the daily limit. Results include a conservative
+                  {" "}{(paperAccount.executionDragBps / 100).toFixed(2)}% execution drag.
+                </p>
+              </div>
+
+              <div className="orderTicket">
+                <div className="subhead">
+                  <div>
+                    <p className="eyebrow">ACTIVE SIGNAL</p>
+                    <h3>{activeAsset} paper ticket</h3>
+                  </div>
+                  <span className={`confidenceChip ${activeProfile.confidence >= paperAccount.minimumConfidence ? "pass" : "blocked"}`}>
+                    {activeProfile.confidence}% CONF
+                  </span>
+                </div>
+                <div className="sideToggle" aria-label="Paper order side">
+                  <button
+                    className={paperSide === "BUY" ? "selected buy" : ""}
+                    type="button"
+                    onClick={() => setPaperSide("BUY")}
+                    aria-pressed={paperSide === "BUY"}
+                  >BUY</button>
+                  <button
+                    className={paperSide === "SELL" ? "selected sell" : ""}
+                    type="button"
+                    onClick={() => setPaperSide("SELL")}
+                    aria-pressed={paperSide === "SELL"}
+                  >SELL</button>
+                </div>
+                <dl className="ticketFacts">
+                  <div><dt>Market price</dt><dd>{money(paperPrices[activeAsset])}</dd></div>
+                  <div><dt>Model bias</dt><dd>{activeProfile.direction}</dd></div>
+                  <div><dt>Notional</dt><dd>{money(paperAccount.orderSize)}</dd></div>
+                </dl>
+                <button className="paperTradeButton" type="button" onClick={runPaperTrade}>
+                  Simulate {paperSide.toLowerCase()} order
+                </button>
+                <p className="paperMessage" role="status">{paperMessage}</p>
+              </div>
+            </div>
+
+            <div className="paperTables">
+              <div>
+                <div className="tableTitle"><h3>Open positions</h3><span>{openPositions.length} ACTIVE</span></div>
+                <div className="miniTable positionsTable" role="table" aria-label="Open paper positions">
+                  <div className="miniRow miniLabels" role="row">
+                    <span>ASSET</span><span>QUANTITY</span><span>VALUE</span><span>UNREALIZED</span>
+                  </div>
+                  {openPositions.map((symbol) => {
+                    const position = paperAccount.positions[symbol];
+                    const value = position.quantity * paperPrices[symbol];
+                    const unrealized = value - position.costBasis;
+                    return (
+                      <div className="miniRow" role="row" key={symbol}>
+                        <strong>{symbol}</strong>
+                        <span>{position.quantity.toFixed(symbol === "SOL" ? 3 : 6)}</span>
+                        <span>{money(value)}</span>
+                        <span className={unrealized >= 0 ? "positive" : "negative"}>{signedMoney(unrealized)}</span>
+                      </div>
+                    );
+                  })}
+                  {openPositions.length === 0 && (
+                    <p className="paperEmpty">No positions yet. Run a qualifying paper buy to start the forward test.</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="tableTitle"><h3>Recent simulations</h3><span>{paperAccount.trades.length} TOTAL</span></div>
+                <div className="miniTable tradesTable" role="table" aria-label="Recent paper trades">
+                  <div className="miniRow miniLabels" role="row">
+                    <span>ORDER</span><span>NOTIONAL</span><span>PRICE</span><span>OUTCOME</span>
+                  </div>
+                  {paperAccount.trades.slice(0, 4).map((trade) => (
+                    <div className="miniRow" role="row" key={trade.id}>
+                      <strong className={trade.side === "BUY" ? "positive" : "negative"}>{trade.side} {trade.symbol}</strong>
+                      <span>{money(trade.grossValue)}</span>
+                      <span>{money(trade.marketPrice)}</span>
+                      <span className={(trade.realizedPnl ?? 0) >= 0 ? "positive" : "negative"}>
+                        {trade.realizedPnl === null ? "OPEN" : signedMoney(trade.realizedPnl)}
+                      </span>
+                    </div>
+                  ))}
+                  {paperAccount.trades.length === 0 && (
+                    <p className="paperEmpty">Completed simulations will appear here with realized outcomes.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <aside className="panel learningPanel">
+            <div className="panelHeader compact">
+              <div>
+                <p className="eyebrow">CONTROLLED LEARNING LOOP</p>
+                <h2>Strategy review</h2>
+              </div>
+              <span className="learningState">OBSERVE</span>
+            </div>
+            <div className="learningScore">
+              <strong>{learning.closedTrades}<span>/{learning.sampleTarget}</span></strong>
+              <p>closed trades before the first rule review</p>
+            </div>
+            <div className="learningStats">
+              <div><span>Win rate</span><strong>{learning.closedTrades ? `${learning.winRate.toFixed(0)}%` : "—"}</strong></div>
+              <div><span>Profit factor</span><strong>{learning.profitFactor === Infinity ? "∞" : learning.profitFactor ? learning.profitFactor.toFixed(2) : "—"}</strong></div>
+              <div><span>Realized P/L</span><strong className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{signedMoney(portfolio.realizedPnl)}</strong></div>
+              <div><span>Unrealized P/L</span><strong className={portfolio.unrealizedPnl >= 0 ? "positive" : "negative"}>{signedMoney(portfolio.unrealizedPnl)}</strong></div>
+            </div>
+            <div className="recommendationCard">
+              <span>NEXT EXPERIMENT</span>
+              <p>{learning.recommendation}</p>
+            </div>
+            <div className="learningGuardrail">
+              <strong>Human review stays in the loop</strong>
+              <p>
+                The learner measures outcomes and proposes one testable change at a time.
+                It never rewrites the live strategy or unlocks real trading on its own.
+              </p>
+            </div>
+            <small className="localNote">
+              MVP ledger is stored in this browser. Shared, cross-device history will move to an authenticated database next.
+            </small>
+          </aside>
+        </div>
       </section>
 
       <section className="panel feedPanel">

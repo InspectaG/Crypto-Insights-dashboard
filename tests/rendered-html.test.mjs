@@ -30,6 +30,9 @@ test("server-renders the crypto intelligence dashboard", async () => {
   const html = await response.text();
   assert.match(html, /<title>Gatchek Signals \| Crypto Intelligence Desk<\/title>/i);
   assert.match(html, /Market pulse/);
+  assert.match(html, /Paper trading lab/);
+  assert.match(html, /Daily buy limit/);
+  assert.match(html, /Human review stays in the loop/);
   assert.match(html, /Signal feed/);
   assert.match(html, /SIMULATED MVP DATA/);
   assert.match(html, /not financial advice/i);
