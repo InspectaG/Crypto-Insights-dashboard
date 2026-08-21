@@ -1,0 +1,46 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+async function render(path = "/") {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+
+  return worker.fetch(
+    new Request(`http://localhost${path}`, {
+      headers: { accept: "text/html" },
+    }),
+    {
+      ASSETS: {
+        fetch: async () => new Response("Not found", { status: 404 }),
+      },
+    },
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    },
+  );
+}
+
+test("server-renders the crypto intelligence dashboard", async () => {
+  const response = await render();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+
+  const html = await response.text();
+  assert.match(html, /<title>Gatchek Signals \| Crypto Intelligence Desk<\/title>/i);
+  assert.match(html, /Market pulse/);
+  assert.match(html, /Signal feed/);
+  assert.match(html, /SIMULATED MVP DATA/);
+  assert.match(html, /not financial advice/i);
+  assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);
+});
+
+test("keeps private-dashboard metadata out of search indexes", async () => {
+  const response = await render();
+  const html = await response.text();
+
+  assert.match(html, /name="robots" content="noindex, nofollow"/i);
+  assert.match(html, /property="og:image" content="https:\/\/crypto\.gatchek\.com\/og\.png"/i);
+  assert.match(html, /name="twitter:card" content="summary_large_image"/i);
+});
