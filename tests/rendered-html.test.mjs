@@ -37,7 +37,10 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Confidence anatomy/i);
   assert.match(html, /Confidence measures evidence agreement/i);
   assert.match(html, /Signal feed/);
-  assert.match(html, /SIMULATED MVP DATA/);
+  assert.match(html, /CONNECTING LIVE SOURCES/);
+  assert.match(html, /Paper autopilot/);
+  assert.match(html, /Performance benchmark/);
+  assert.match(html, /TRADING LOCKED/);
   assert.match(html, /not financial advice/i);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);
 });

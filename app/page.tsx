@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createPaperAccount,
-  executePaperTrade,
-  isPaperAccount,
   learningSummary,
   portfolioSnapshot,
   todayBuySpend,
+  type PaperAccount,
   type PaperPrices,
   type PaperSide,
   type PaperSymbol,
@@ -40,6 +39,68 @@ type Asset = {
   volume: string;
   bias: Bias;
   bars: number[];
+};
+
+type FeedEvent = {
+  id: string;
+  source: "WHALE" | "SOCIAL" | "MARKET" | "NEWS";
+  asset: PaperSymbol | "MARKET";
+  bias: Bias;
+  headline: string;
+  detail: string;
+  score: number;
+  url: string | null;
+  occurredAt: string;
+};
+
+type DashboardAlert = {
+  id: string;
+  severity: "info" | "watch" | "action";
+  title: string;
+  body: string;
+  sourceUrl: string | null;
+  readAt: string | null;
+  createdAt: string;
+};
+
+type ServerPerformance = {
+  maxDrawdownPct: number;
+  buyHoldReturnPct: number;
+  alphaVsBtcPct: number;
+  snapshots: number;
+};
+
+type AutomationRun = {
+  id: string;
+  status: string;
+  startedAt: string;
+  finishedAt: string | null;
+  signals: number;
+  events: number;
+  tradeId: string | null;
+  error: string | null;
+};
+
+type CoinbaseConnection = {
+  label: string;
+  configured: boolean;
+  connected: boolean;
+  mode: string;
+  accountCount: number;
+  permissions: { canView: boolean; canTrade: boolean; canTransfer: boolean };
+  message: string;
+};
+
+type CoinbaseStatus = {
+  configured: boolean;
+  connected: boolean;
+  mode: string;
+  accountCount: number;
+  permissions: { canView: boolean; canTrade: boolean; canTransfer: boolean };
+  realTradingEnabled: false;
+  killSwitch: true;
+  message: string;
+  connections?: CoinbaseConnection[];
 };
 
 const fallbackAssets: Asset[] = [
@@ -117,46 +178,50 @@ const signalProfiles: Record<PaperSymbol, SignalProfile> = {
   },
 };
 
-const events = [
+const fallbackEvents: FeedEvent[] = [
   {
-    id: 1,
-    time: "2m",
+    id: "fallback-1",
     source: "WHALE",
     asset: "BTC",
     bias: "bullish" as Bias,
     headline: "2,140 BTC moved off a major exchange",
     detail: "Large exchange outflow · $249.8M estimated value",
     score: 88,
+    url: null,
+    occurredAt: new Date().toISOString(),
   },
   {
-    id: 2,
-    time: "8m",
+    id: "fallback-2",
     source: "SOCIAL",
     asset: "ETH",
     bias: "bullish" as Bias,
     headline: "Developer narrative velocity accelerating",
     detail: "Mentions +41% · Positive sentiment 68%",
     score: 74,
+    url: null,
+    occurredAt: new Date().toISOString(),
   },
   {
-    id: 3,
-    time: "14m",
+    id: "fallback-3",
     source: "MARKET",
     asset: "SOL",
     bias: "bearish" as Bias,
     headline: "Perpetual funding diverges from spot demand",
     detail: "Crowded longs · Open interest +9.4% in 4h",
     score: 69,
+    url: null,
+    occurredAt: new Date().toISOString(),
   },
   {
-    id: 4,
-    time: "21m",
+    id: "fallback-4",
     source: "NEWS",
     asset: "BTC",
     bias: "neutral" as Bias,
     headline: "Macro headline adds short-term volatility risk",
     detail: "3 credible sources · Impact window 1–4h",
     score: 62,
+    url: null,
+    occurredAt: new Date().toISOString(),
   },
 ];
 
@@ -168,10 +233,17 @@ const filters: Array<{ label: string; value: "all" | Bias }> = [
 ];
 
 const paperSymbols: PaperSymbol[] = ["BTC", "ETH", "SOL"];
-const PAPER_STORAGE_KEY = "gatchek-paper-account-v1";
-
 function numberFromPrice(price: string) {
   return Number(price.replace(/[^0-9.]/g, ""));
+}
+
+function relativeTime(iso: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 function money(value: number) {
@@ -205,6 +277,28 @@ export default function Home() {
   const [marketSource, setMarketSource] = useState<"live" | "fallback">("fallback");
   const [paperAccount, setPaperAccount] = useState(() => createPaperAccount());
   const [paperReady, setPaperReady] = useState(false);
+  const [profiles, setProfiles] = useState(signalProfiles);
+  const [feedEvents, setFeedEvents] = useState(fallbackEvents);
+  const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
+  const [serverPerformance, setServerPerformance] = useState<ServerPerformance>({
+    maxDrawdownPct: 0,
+    buyHoldReturnPct: 0,
+    alphaVsBtcPct: 0,
+    snapshots: 0,
+  });
+  const [automation, setAutomation] = useState<AutomationRun | null>(null);
+  const [autoPaperEnabled, setAutoPaperEnabled] = useState(true);
+  const [coinbase, setCoinbase] = useState<CoinbaseStatus>({
+    configured: false,
+    connected: false,
+    mode: "disconnected",
+    accountCount: 0,
+    permissions: { canView: false, canTrade: false, canTransfer: false },
+    realTradingEnabled: false,
+    killSwitch: true,
+    message: "Read-only credentials have not been connected yet.",
+  });
+  const [syncing, setSyncing] = useState(false);
   const [paperSide, setPaperSide] = useState<PaperSide>("BUY");
   const [fundAmount, setFundAmount] = useState(10_000);
   const [fundDailyLimit, setFundDailyLimit] = useState(1_000);
@@ -212,66 +306,77 @@ export default function Home() {
     "Forward test is ready. No real orders or money are involved.",
   );
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadMarket() {
-      try {
-        const response = await fetch("/api/market", {
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        if (!response.ok) return;
-        const payload = (await response.json()) as { assets?: Asset[] };
-        if (payload.assets?.length === fallbackAssets.length) {
-          setAssetData(payload.assets);
-          setMarketSource("live");
-        }
-      } catch {
-        // The deterministic preview data remains visible if the upstream feed is unavailable.
+  const syncControlPlane = useCallback(async (showProgress = false) => {
+    if (showProgress) setSyncing(true);
+    try {
+      const response = await fetch("/api/control-plane", { credentials: "same-origin" });
+      const payload = await response.json() as {
+        error?: string;
+        paperAccount?: PaperAccount;
+        market?: Array<{
+          symbol: PaperSymbol; name: string; priceLabel: string; changeLabel: string;
+          volumeLabel: string; bias: Bias; bars: number[];
+        }>;
+        signals?: Array<SignalProfile & { symbol: PaperSymbol }>;
+        events?: FeedEvent[];
+        alerts?: DashboardAlert[];
+        performance?: ServerPerformance;
+        automation?: AutomationRun | null;
+        settings?: { autoPaperEnabled?: boolean };
+        coinbase?: CoinbaseStatus;
+      };
+      if (!response.ok) throw new Error(payload.error ?? "Dashboard sync failed");
+      if (payload.paperAccount) {
+        setPaperAccount(payload.paperAccount);
+        setFundAmount(payload.paperAccount.startingBalance);
+        setFundDailyLimit(payload.paperAccount.dailyLimit);
       }
+      if (payload.market?.length) {
+        setAssetData(payload.market.map((asset) => ({
+          symbol: asset.symbol,
+          name: asset.name,
+          price: asset.priceLabel,
+          change: asset.changeLabel,
+          volume: asset.volumeLabel,
+          bias: asset.bias,
+          bars: asset.bars,
+        })));
+        setMarketSource("live");
+      }
+      if (payload.signals?.length) {
+        const nextProfiles: Record<PaperSymbol, SignalProfile> = { ...signalProfiles };
+        for (const signal of payload.signals) nextProfiles[signal.symbol] = signal;
+        setProfiles(nextProfiles);
+      }
+      if (payload.events?.length) setFeedEvents(payload.events);
+      if (payload.alerts) setAlerts(payload.alerts);
+      if (payload.performance) setServerPerformance(payload.performance);
+      if (payload.automation !== undefined) setAutomation(payload.automation);
+      if (payload.settings?.autoPaperEnabled !== undefined) setAutoPaperEnabled(payload.settings.autoPaperEnabled);
+      if (payload.coinbase) setCoinbase(payload.coinbase);
+      setPaperReady(true);
+    } catch (error) {
+      setPaperMessage(error instanceof Error ? error.message : "Dashboard sync failed");
+      setPaperReady(true);
+    } finally {
+      if (showProgress) setSyncing(false);
     }
+  }, []);
 
-    loadMarket();
-    const refresh = window.setInterval(loadMarket, 60_000);
+  useEffect(() => {
+    const initial = window.setTimeout(() => void syncControlPlane(), 0);
+    const refresh = window.setInterval(() => void syncControlPlane(), 60_000);
     return () => {
-      controller.abort();
+      window.clearTimeout(initial);
       window.clearInterval(refresh);
     };
-  }, []);
-
-  useEffect(() => {
-    const hydratePaperAccount = window.setTimeout(() => {
-      try {
-        const saved = window.localStorage.getItem(PAPER_STORAGE_KEY);
-        if (saved) {
-          const parsed: unknown = JSON.parse(saved);
-          if (isPaperAccount(parsed)) {
-            setPaperAccount(parsed);
-            setFundAmount(parsed.startingBalance);
-            setFundDailyLimit(parsed.dailyLimit);
-          }
-        }
-      } catch {
-        // Corrupt or unavailable storage should never prevent the dashboard from loading.
-      } finally {
-        setPaperReady(true);
-      }
-    }, 0);
-
-    return () => window.clearTimeout(hydratePaperAccount);
-  }, []);
-
-  useEffect(() => {
-    if (!paperReady) return;
-    window.localStorage.setItem(PAPER_STORAGE_KEY, JSON.stringify(paperAccount));
-  }, [paperAccount, paperReady]);
+  }, [syncControlPlane]);
 
   const visibleEvents = useMemo(
-    () => events.filter((event) => filter === "all" || event.bias === filter),
-    [filter],
+    () => feedEvents.filter((event) => filter === "all" || event.bias === filter),
+    [feedEvents, filter],
   );
-  const activeProfile = signalProfiles[activeAsset];
+  const activeProfile = profiles[activeAsset];
   const activeConfidenceBand = confidenceBand(activeProfile.confidence);
   const paperPrices = useMemo(
     () =>
@@ -290,43 +395,136 @@ export default function Home() {
   const openPositions = paperSymbols.filter(
     (symbol) => paperAccount.positions[symbol].quantity > 0,
   );
+  const unreadAlerts = alerts.filter((alert) => !alert.readAt);
+  const coinbaseConnections = coinbase.connections ?? [{
+    label: "Coinbase",
+    configured: coinbase.configured,
+    connected: coinbase.connected,
+    mode: coinbase.mode,
+    accountCount: coinbase.accountCount,
+    permissions: coinbase.permissions,
+    message: coinbase.message,
+  }];
 
   function selectAsset(symbol: PaperSymbol) {
     setActiveAsset(symbol);
-    setPaperSide(signalProfiles[symbol].side);
+    setPaperSide(profiles[symbol].side);
   }
 
-  function runPaperTrade() {
-    const result = executePaperTrade(paperAccount, {
-      symbol: activeAsset,
-      side: paperSide,
-      grossValue: paperAccount.orderSize,
-      marketPrice: paperPrices[activeAsset],
-      confidence: activeProfile.confidence,
-      rationale: `${activeProfile.direction} · ${activeProfile.horizon}`,
-    });
-
-    if (!result.ok) {
-      setPaperMessage(result.message);
-      return;
+  async function runPaperTrade() {
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/paper/trade", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: activeAsset, side: paperSide, grossValue: paperAccount.orderSize }),
+      });
+      const result = await response.json() as { error?: string; paperAccount?: PaperAccount; trade?: { side: string; symbol: string; marketPrice: number } };
+      if (!response.ok || !result.paperAccount || !result.trade) throw new Error(result.error ?? "Paper order failed");
+      setPaperAccount(result.paperAccount);
+      setPaperMessage(`${result.trade.side} simulated for ${result.trade.symbol} at ${money(result.trade.marketPrice)}.`);
+      await syncControlPlane();
+    } catch (error) {
+      setPaperMessage(error instanceof Error ? error.message : "Paper order failed");
+    } finally {
+      setSyncing(false);
     }
-
-    setPaperAccount(result.account);
-    setPaperMessage(
-      `${result.trade.side} simulated for ${result.trade.symbol} at ${money(result.trade.marketPrice)}.`,
-    );
   }
 
-  function resetPaperAccount() {
+  async function savePaperSettings() {
+    const response = await fetch("/api/paper/settings", {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderSize: paperAccount.orderSize,
+        minimumConfidence: paperAccount.minimumConfidence,
+        autoPaperEnabled,
+      }),
+    });
+    const result = await response.json() as { error?: string; paperAccount?: PaperAccount };
+    if (!response.ok) throw new Error(result.error ?? "Settings update failed");
+    if (result.paperAccount) setPaperAccount(result.paperAccount);
+  }
+
+  async function resetPaperAccount() {
     const startingBalance = Math.max(100, Number(fundAmount) || 0);
     const dailyLimit = Math.min(
       startingBalance,
       Math.max(10, Number(fundDailyLimit) || 0),
     );
-    setPaperAccount(createPaperAccount(startingBalance, dailyLimit));
-    setFundAmount(startingBalance);
-    setFundDailyLimit(dailyLimit);
-    setPaperMessage(`New ${money(startingBalance)} paper account funded. Previous simulated history was cleared.`);
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/paper/reset", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startingBalance, dailyLimit }),
+      });
+      const result = await response.json() as { error?: string; paperAccount?: PaperAccount };
+      if (!response.ok || !result.paperAccount) throw new Error(result.error ?? "Reset failed");
+      setPaperAccount(result.paperAccount);
+      setPaperMessage(`New ${money(startingBalance)} shared paper account funded. Previous simulated history was cleared.`);
+      await syncControlPlane();
+    } catch (error) {
+      setPaperMessage(error instanceof Error ? error.message : "Reset failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function runNow() {
+    setSyncing(true);
+    setPaperMessage("Refreshing live evidence and evaluating one guarded paper decision…");
+    try {
+      const response = await fetch("/api/automation/run", { method: "POST", credentials: "same-origin" });
+      const result = await response.json() as { error?: string; tradeId?: string | null };
+      if (!response.ok) throw new Error(result.error ?? "Automation run failed");
+      setPaperMessage(result.tradeId ? "Scheduled logic completed and placed one paper trade." : "Scheduled logic completed; no qualifying paper trade was placed.");
+      await syncControlPlane();
+    } catch (error) {
+      setPaperMessage(error instanceof Error ? error.message : "Automation run failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function markAlertsRead() {
+    await fetch("/api/alerts/read", { method: "POST", credentials: "same-origin" });
+    setAlerts((current) => current.map((alert) => ({ ...alert, readAt: alert.readAt ?? new Date().toISOString() })));
+  }
+
+  async function toggleAutoPaper(enabled: boolean) {
+    setAutoPaperEnabled(enabled);
+    try {
+      const response = await fetch("/api/paper/settings", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderSize: paperAccount.orderSize,
+          minimumConfidence: paperAccount.minimumConfidence,
+          autoPaperEnabled: enabled,
+        }),
+      });
+      if (!response.ok) throw new Error("Automation setting failed");
+    } catch (error) {
+      setAutoPaperEnabled(!enabled);
+      setPaperMessage(error instanceof Error ? error.message : "Automation setting failed");
+    }
+  }
+
+  async function enableBrowserAlerts() {
+    if (!("Notification" in window)) {
+      setPaperMessage("This browser does not support desktop notifications.");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setPaperMessage(permission === "granted" ? "Browser alerts enabled on this device." : "Browser notification permission was not granted.");
+    if (permission === "granted" && unreadAlerts[0]) {
+      new Notification(unreadAlerts[0].title, { body: unreadAlerts[0].body });
+    }
   }
 
   return (
@@ -340,7 +538,7 @@ export default function Home() {
         </a>
         <div className="topbarRight">
           <span className="demoPill">
-            {marketSource === "live" ? "LIVE PRICES · SIMULATED SIGNALS" : "SIMULATED MVP DATA"}
+            {marketSource === "live" ? "LIVE SOURCES · PAPER ONLY" : "CONNECTING LIVE SOURCES"}
           </span>
           <span className="status"><i /> SYSTEM ONLINE</span>
           <button className="avatar" aria-label="Open account menu">JG</button>
@@ -379,8 +577,8 @@ export default function Home() {
               </div>
               <div className="assetBadges">
                 <span className={`change ${asset.bias}`}>{asset.change}</span>
-                <span className={`assetConfidence ${confidenceBand(signalProfiles[asset.symbol].confidence)}`}>
-                  {signalProfiles[asset.symbol].confidence}% CONF
+                <span className={`assetConfidence ${confidenceBand(profiles[asset.symbol].confidence)}`}>
+                  {profiles[asset.symbol].confidence}% CONF
                 </span>
               </div>
             </div>
@@ -428,26 +626,13 @@ export default function Home() {
           </div>
 
           <div className="evidenceList">
-            <div>
-              <span className="evidenceIcon bullish">W</span>
-              <p><strong>Whale accumulation</strong><small>Large net exchange outflows</small></p>
-              <b>+22</b>
-            </div>
-            <div>
-              <span className="evidenceIcon bullish">M</span>
-              <p><strong>Momentum confirmation</strong><small>Volume-backed breakout structure</small></p>
-              <b>+18</b>
-            </div>
-            <div>
-              <span className="evidenceIcon neutral">N</span>
-              <p><strong>News environment</strong><small>Constructive, no major catalyst</small></p>
-              <b>+7</b>
-            </div>
-            <div>
-              <span className="evidenceIcon bearish">R</span>
-              <p><strong>Derivatives risk</strong><small>Funding approaching elevated range</small></p>
-              <b>−9</b>
-            </div>
+            {activeProfile.factors.map((factor) => (
+              <div key={factor.label}>
+                <span className={`evidenceIcon ${factor.value >= 65 ? "bullish" : "neutral"}`}>{factor.label[0]}</span>
+                <p><strong>{factor.label}</strong><small>Current source-normalized evidence score</small></p>
+                <b>{factor.value}</b>
+              </div>
+            ))}
           </div>
 
           <div className="riskCallout">
@@ -505,7 +690,7 @@ export default function Home() {
               what the strategy would have earned or lost without touching Coinbase.
             </p>
           </div>
-          <span className="paperBadge">NO REAL FUNDS</span>
+          <span className="paperBadge">SHARED D1 · NO REAL FUNDS</span>
         </div>
 
         <div className="paperMetrics" aria-label="Paper portfolio summary">
@@ -582,6 +767,7 @@ export default function Home() {
                       step="25"
                       type="number"
                       value={paperAccount.orderSize}
+                      onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                       onChange={(event) => setPaperAccount((account) => ({
                         ...account,
                         orderSize: Math.max(0, Number(event.target.value)),
@@ -596,6 +782,7 @@ export default function Home() {
                       min="1"
                       type="number"
                       value={paperAccount.minimumConfidence}
+                      onBlur={() => void savePaperSettings().catch((error) => setPaperMessage(error instanceof Error ? error.message : "Settings update failed"))}
                       onChange={(event) => setPaperAccount((account) => ({
                         ...account,
                         minimumConfidence: Math.min(100, Math.max(1, Number(event.target.value))),
@@ -638,8 +825,8 @@ export default function Home() {
                   <div><dt>Model bias</dt><dd>{activeProfile.direction}</dd></div>
                   <div><dt>Notional</dt><dd>{money(paperAccount.orderSize)}</dd></div>
                 </dl>
-                <button className="paperTradeButton" type="button" onClick={runPaperTrade}>
-                  Simulate {paperSide.toLowerCase()} order
+                <button className="paperTradeButton" disabled={syncing || !paperReady} type="button" onClick={() => void runPaperTrade()}>
+                  {syncing ? "Working…" : `Simulate ${paperSide.toLowerCase()} order`}
                 </button>
                 <p className="paperMessage" role="status">{paperMessage}</p>
               </div>
@@ -727,9 +914,98 @@ export default function Home() {
               </p>
             </div>
             <small className="localNote">
-              MVP ledger is stored in this browser. Shared, cross-device history will move to an authenticated database next.
+              The ledger is stored in Cloudflare D1 and shared across your two authorized Google accounts.
             </small>
           </aside>
+        </div>
+      </section>
+
+      <section className="operationsSection" aria-labelledby="operations-title">
+        <div className="paperTitleRow operationsTitle">
+          <div>
+            <p className="eyebrow">AUTOMATION · MEASUREMENT · SAFETY</p>
+            <h2 id="operations-title">Control room</h2>
+            <p>The worker refreshes evidence every 15 minutes, records decisions, and keeps real trading locked.</p>
+          </div>
+          <button className="ghostButton" disabled={syncing} type="button" onClick={() => void syncControlPlane(true)}>
+            {syncing ? "Syncing…" : "Refresh dashboard"}
+          </button>
+        </div>
+
+        <div className="operationsGrid">
+          <article className="panel operationCard">
+            <div className="operationHead">
+              <div><p className="eyebrow">15-MINUTE WORKER</p><h3>Paper autopilot</h3></div>
+              <span className={`statePill ${autoPaperEnabled ? "safe" : "off"}`}>{autoPaperEnabled ? "ENABLED" : "PAUSED"}</span>
+            </div>
+            <div className="switchRow">
+              <span><strong>Automatic paper decisions</strong><small>Maximum one qualifying simulation per run</small></span>
+              <input aria-label="Automatic paper decisions" checked={autoPaperEnabled} type="checkbox" onChange={(event) => void toggleAutoPaper(event.target.checked)} />
+            </div>
+            <dl className="operationFacts">
+              <div><dt>Last status</dt><dd>{automation?.status ?? "INITIALIZING"}</dd></div>
+              <div><dt>Last run</dt><dd>{automation ? relativeTime(automation.startedAt) : "—"}</dd></div>
+              <div><dt>Evidence</dt><dd>{automation ? `${automation.events} events / ${automation.signals} signals` : "—"}</dd></div>
+            </dl>
+            <button className="paperTradeButton" disabled={syncing} type="button" onClick={() => void runNow()}>
+              {syncing ? "Running…" : "Run intelligence cycle now"}
+            </button>
+          </article>
+
+          <article className="panel operationCard">
+            <div className="operationHead">
+              <div><p className="eyebrow">CALIBRATION</p><h3>Performance benchmark</h3></div>
+              <span className="statePill observe">OBSERVE</span>
+            </div>
+            <div className="benchmarkGrid">
+              <div><span>Strategy return</span><strong className={portfolio.returnPct >= 0 ? "positive" : "negative"}>{portfolio.returnPct >= 0 ? "+" : ""}{portfolio.returnPct.toFixed(2)}%</strong></div>
+              <div><span>BTC hold</span><strong>{serverPerformance.buyHoldReturnPct >= 0 ? "+" : ""}{serverPerformance.buyHoldReturnPct.toFixed(2)}%</strong></div>
+              <div><span>Alpha vs BTC</span><strong className={serverPerformance.alphaVsBtcPct >= 0 ? "positive" : "negative"}>{serverPerformance.alphaVsBtcPct >= 0 ? "+" : ""}{serverPerformance.alphaVsBtcPct.toFixed(2)}%</strong></div>
+              <div><span>Max drawdown</span><strong className="negative">−{serverPerformance.maxDrawdownPct.toFixed(2)}%</strong></div>
+            </div>
+            <p className="operationNote">{serverPerformance.snapshots} portfolio snapshots recorded. Confidence calibration stays observational until the sample is large enough for human review.</p>
+          </article>
+
+          <article className="panel operationCard alertsCard">
+            <div className="operationHead">
+              <div><p className="eyebrow">PERSISTENT ALERTS</p><h3>Decision inbox</h3></div>
+              <span className={`statePill ${unreadAlerts.length ? "action" : "safe"}`}>{unreadAlerts.length} UNREAD</span>
+            </div>
+            <div className="alertList">
+              {alerts.slice(0, 3).map((alert) => (
+                <div className={alert.readAt ? "read" : ""} key={alert.id}>
+                  <i className={alert.severity} />
+                  <p><strong>{alert.title}</strong><small>{alert.body}</small></p>
+                  <time>{relativeTime(alert.createdAt)}</time>
+                </div>
+              ))}
+              {!alerts.length && <p className="paperEmpty">The first scheduled signal or paper decision will appear here.</p>}
+            </div>
+            <div className="buttonPair">
+              <button className="ghostButton" type="button" onClick={() => void enableBrowserAlerts()}>Enable browser alerts</button>
+              <button className="ghostButton" disabled={!unreadAlerts.length} type="button" onClick={() => void markAlertsRead()}>Mark read</button>
+            </div>
+          </article>
+
+          <article className="panel operationCard coinbaseCard">
+            <div className="operationHead">
+              <div><p className="eyebrow">COINBASE SAFETY GATE</p><h3>Account hooks</h3></div>
+              <span className="statePill locked">TRADING LOCKED</span>
+            </div>
+            <div className="connectionList">
+              {coinbaseConnections.map((connection) => (
+                <div key={connection.label}>
+                  <span className={`connectionDot ${connection.connected ? "connected" : ""}`} />
+                  <p><strong>{connection.label}</strong><small>{connection.message}</small></p>
+                  <b>{connection.mode.replaceAll("_", " ").toUpperCase()}</b>
+                </div>
+              ))}
+            </div>
+            <div className="safetyLock">
+              <strong>Kill switch ON · daily real-money limit $0</strong>
+              <p>Only read-only account validation exists. There is no real-order route in this build.</p>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -759,10 +1035,10 @@ export default function Home() {
           </div>
           {visibleEvents.map((event) => (
             <div className="eventRow" role="row" key={event.id}>
-              <span className="eventTime">{event.time}</span>
+              <span className="eventTime">{relativeTime(event.occurredAt)}</span>
               <span><b className={`sourceTag source-${event.source.toLowerCase()}`}>{event.source}</b></span>
               <span className="eventCopy">
-                <strong>{event.headline}</strong>
+                {event.url ? <a href={event.url} rel="noreferrer" target="_blank">{event.headline}</a> : <strong>{event.headline}</strong>}
                 <small>{event.asset} · {event.detail}</small>
               </span>
               <span className={`impact ${event.bias}`}><i /> {event.score}/100</span>
