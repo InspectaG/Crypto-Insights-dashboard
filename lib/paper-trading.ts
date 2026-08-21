@@ -305,6 +305,7 @@ export function learningSummary(account: PaperAccount) {
     winRate,
     profitFactor,
     sampleTarget,
+    highConfidenceTrades: highConfidence.length,
     highConfidenceWinRate,
     recommendation,
   };

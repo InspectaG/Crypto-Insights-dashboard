@@ -33,6 +33,9 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.match(html, /Paper trading lab/);
   assert.match(html, /Daily buy limit/);
   assert.match(html, /Human review stays in the loop/);
+  assert.match(html, /Model confidence/i);
+  assert.match(html, /Confidence anatomy/i);
+  assert.match(html, /Confidence measures evidence agreement/i);
   assert.match(html, /Signal feed/);
   assert.match(html, /SIMULATED MVP DATA/);
   assert.match(html, /not financial advice/i);

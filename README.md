@@ -10,6 +10,8 @@ before paid data vendors or automated trading are introduced.
 - Live BTC, ETH, and SOL price, 24-hour change, and volume snapshots from the
   public Coinbase Exchange product statistics endpoint.
 - Explainable signal direction, confidence, horizon, evidence, and invalidation.
+- Low, moderate, and high confidence bands with per-source scoring and an explicit
+  distinction between evidence agreement and probability of profit.
 - Whale, social, market, and news event feed with bias filters.
 - Browser-persistent paper portfolio with configurable starting cash, order size,
   confidence threshold, and a hard daily buy limit.

@@ -67,8 +67,14 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .coin-btc { background: #f6c65b; }.coin-eth { background: #a5b8ff; }.coin-sol { background: #63e6be; }
 .assetHead strong { display: block; font-size: 13px; letter-spacing: .06em; }
 .assetHead div span { color: #68748d; display: block; font-size: 10px; margin-top: 3px; }
+.assetBadges { align-items: flex-end; display: flex; flex-direction: column; gap: 6px; }
+.assetHead .assetBadges span { margin-top: 0; }
 .change { border-radius: 4px; font-family: var(--font-geist-mono); font-size: 10px; padding: 5px 7px; }
 .change.bullish { background: rgba(99,230,190,.08); color: var(--green); }.change.bearish { background: rgba(255,123,134,.08); color: var(--red); }
+.assetConfidence { border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-geist-mono); font-size: 7px !important; letter-spacing: .08em; padding: 4px 6px; }
+.assetConfidence.high { background: rgba(99,230,190,.06); border-color: rgba(99,230,190,.15); color: var(--green) !important; }
+.assetConfidence.moderate { background: rgba(246,198,91,.06); border-color: rgba(246,198,91,.15); color: var(--amber) !important; }
+.assetConfidence.low { background: rgba(255,123,134,.06); border-color: rgba(255,123,134,.15); color: var(--red) !important; }
 .assetBody { align-items: flex-end; display: flex; justify-content: space-between; margin-top: 25px; }
 .price { display: block; font-family: var(--font-geist-mono); font-size: 21px; font-weight: 500; }
 .volume { color: #65718a; display: block; font-family: var(--font-geist-mono); font-size: 9px; margin-top: 6px; }
@@ -87,7 +93,11 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .signalDirection strong { color: var(--green); display: block; font-family: var(--font-geist-mono); font-size: clamp(26px, 3vw, 42px); font-weight: 520; letter-spacing: -.04em; margin: 7px 0 9px; }
 .confidenceDial { align-items: center; background: radial-gradient(circle, rgba(99,230,190,.09), transparent 68%); border: 1px solid rgba(99,230,190,.24); border-radius: 50%; display: flex; flex-direction: column; height: 106px; justify-content: center; position: relative; width: 106px; }
 .confidenceDial::before { border: 2px solid var(--green); border-bottom-color: transparent; border-left-color: transparent; border-radius: 50%; content: ""; inset: -3px; position: absolute; transform: rotate(-28deg); }
-.dialValue { font-family: var(--font-geist-mono); font-size: 25px; }.dialValue span { color: #7c879e; font-size: 12px; }.confidenceDial small { color: #65718a; font-size: 8px; letter-spacing: .12em; margin-top: 3px; }
+.dialValue { font-family: var(--font-geist-mono); font-size: 25px; }.dialValue span { color: #7c879e; font-size: 12px; }.confidenceDial small { color: #65718a; font-size: 7px; letter-spacing: .08em; margin-top: 3px; }
+.confidenceDial b { font-family: var(--font-geist-mono); font-size: 7px; letter-spacing: .12em; margin-top: 4px; }
+.confidenceDial b.high, .scoreNumber.high { color: var(--green); }.confidenceDial b.moderate, .scoreNumber.moderate { color: var(--amber); }.confidenceDial b.low, .scoreNumber.low { color: var(--red); }
+.confidenceMeaning { align-items: center; background: rgba(99,230,190,.035); border: 1px solid rgba(99,230,190,.09); border-radius: 7px; display: grid; gap: 12px; grid-template-columns: auto 1fr; margin: 12px 0 5px; padding: 10px 12px; }
+.confidenceMeaning span { color: var(--green); font-family: var(--font-geist-mono); font-size: 7px; letter-spacing: .12em; }.confidenceMeaning p { color: #7d89a0; font-size: 9px; line-height: 1.5; margin: 0; }
 .evidenceList > div { align-items: center; border-bottom: 1px solid rgba(136,153,190,.09); display: grid; gap: 11px; grid-template-columns: auto 1fr auto; padding: 12px 0; }
 .evidenceIcon { align-items: center; background: rgba(99,230,190,.09); border-radius: 6px; color: var(--green); display: flex; font-family: var(--font-geist-mono); font-size: 10px; font-weight: 700; height: 29px; justify-content: center; width: 29px; }
 .evidenceIcon.neutral { background: rgba(246,198,91,.09); color: var(--amber); }.evidenceIcon.bearish { background: rgba(255,123,134,.09); color: var(--red); }
@@ -99,6 +109,11 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .scoreBars { margin-top: 32px; }.scoreRow { margin-bottom: 22px; }.scoreRow > div:first-child { display: flex; font-size: 10px; justify-content: space-between; margin-bottom: 9px; }.scoreRow span { color: #8994aa; }.scoreRow b { font-family: var(--font-geist-mono); font-weight: 500; }
 .track { background: #1b2334; border-radius: 999px; height: 4px; overflow: hidden; }.track i { border-radius: inherit; display: block; height: 100%; }
 .regimeNote { background: rgba(122,162,255,.055); border-left: 2px solid var(--blue); margin-top: 28px; padding: 13px 14px; }.regimeNote span { color: var(--blue); font-family: var(--font-geist-mono); font-size: 8px; letter-spacing: .14em; }.regimeNote p { color: #8590a7; font-size: 10px; line-height: 1.6; margin: 6px 0 0; }
+.confidenceScale { display: grid; gap: 5px; grid-template-columns: repeat(3, 1fr); margin-top: 16px; }
+.confidenceScale div { background: rgba(9,14,24,.65); border: 1px solid var(--line); border-radius: 6px; opacity: .5; padding: 8px; }
+.confidenceScale div.active { opacity: 1; }.confidenceScale div.active.high { border-color: rgba(99,230,190,.3); }.confidenceScale div.active.moderate { border-color: rgba(246,198,91,.3); }.confidenceScale div.active.low { border-color: rgba(255,123,134,.3); }
+.confidenceScale strong, .confidenceScale span { display: block; font-family: var(--font-geist-mono); font-size: 7px; }.confidenceScale span { color: #606d85; margin-top: 3px; }.confidenceScale .high strong { color: var(--green); }.confidenceScale .moderate strong { color: var(--amber); }.confidenceScale .low strong { color: var(--red); }
+.confidenceDisclaimer { color: #5f6b82; font-size: 8px; line-height: 1.5; margin: 10px 0 0; }
 
 .paperSection { margin: 44px 0 24px; scroll-margin-top: 24px; }
 .paperTitleRow { align-items: flex-end; display: flex; justify-content: space-between; margin-bottom: 18px; }

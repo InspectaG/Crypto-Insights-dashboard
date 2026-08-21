@@ -14,6 +14,23 @@ import {
 } from "../lib/paper-trading";
 
 type Bias = "bullish" | "bearish" | "neutral";
+type ConfidenceBand = "high" | "moderate" | "low";
+
+type ConfidenceFactor = {
+  label: string;
+  value: number;
+  color: string;
+};
+
+type SignalProfile = {
+  direction: string;
+  side: PaperSide;
+  confidence: number;
+  horizon: string;
+  invalidation: string;
+  factors: ConfidenceFactor[];
+  modelNote: string;
+};
 
 type Asset = {
   symbol: PaperSymbol;
@@ -55,16 +72,20 @@ const fallbackAssets: Asset[] = [
   },
 ];
 
-const signalProfiles: Record<
-  PaperSymbol,
-  { direction: string; side: PaperSide; confidence: number; horizon: string; invalidation: string }
-> = {
+const signalProfiles: Record<PaperSymbol, SignalProfile> = {
   BTC: {
     direction: "ACCUMULATE",
     side: "BUY",
     confidence: 78,
     horizon: "12–24 hour horizon",
     invalidation: "Signal weakens below $112,600 or if exchange inflows reverse positive.",
+    factors: [
+      { label: "Market momentum", value: 84, color: "#63e6be" },
+      { label: "Whale flow", value: 88, color: "#7aa2ff" },
+      { label: "Social velocity", value: 68, color: "#c084fc" },
+      { label: "News sentiment", value: 61, color: "#f6c65b" },
+    ],
+    modelNote: "Three independent sources agree. Elevated leverage keeps this below very-high confidence.",
   },
   ETH: {
     direction: "WATCH LONG",
@@ -72,6 +93,13 @@ const signalProfiles: Record<
     confidence: 71,
     horizon: "8–16 hour horizon",
     invalidation: "Signal weakens if social velocity falls below baseline or ETH loses relative strength.",
+    factors: [
+      { label: "Market momentum", value: 76, color: "#63e6be" },
+      { label: "Whale flow", value: 58, color: "#7aa2ff" },
+      { label: "Social velocity", value: 83, color: "#c084fc" },
+      { label: "News sentiment", value: 70, color: "#f6c65b" },
+    ],
+    modelNote: "Social and price signals agree, but whale confirmation is still mixed.",
   },
   SOL: {
     direction: "REDUCE RISK",
@@ -79,6 +107,13 @@ const signalProfiles: Record<
     confidence: 69,
     horizon: "4–12 hour horizon",
     invalidation: "Bearish pressure eases if spot volume confirms a reclaim above the local range.",
+    factors: [
+      { label: "Market momentum", value: 72, color: "#63e6be" },
+      { label: "Whale flow", value: 63, color: "#7aa2ff" },
+      { label: "Social velocity", value: 61, color: "#c084fc" },
+      { label: "News sentiment", value: 76, color: "#f6c65b" },
+    ],
+    modelNote: "Risk signals lean bearish, though source agreement is only moderate.",
   },
 };
 
@@ -149,6 +184,18 @@ function money(value: number) {
 
 function signedMoney(value: number) {
   return `${value >= 0 ? "+" : "−"}${money(Math.abs(value))}`;
+}
+
+function confidenceBand(value: number): ConfidenceBand {
+  if (value >= 75) return "high";
+  if (value >= 60) return "moderate";
+  return "low";
+}
+
+function confidenceMeaning(band: ConfidenceBand) {
+  if (band === "high") return "Multiple independent sources align with limited contradiction.";
+  if (band === "moderate") return "The evidence leans one way, but meaningful uncertainty remains.";
+  return "The evidence is weak or conflicting; treat this as watch-only.";
 }
 
 export default function Home() {
@@ -225,6 +272,7 @@ export default function Home() {
     [filter],
   );
   const activeProfile = signalProfiles[activeAsset];
+  const activeConfidenceBand = confidenceBand(activeProfile.confidence);
   const paperPrices = useMemo(
     () =>
       Object.fromEntries(
@@ -329,7 +377,12 @@ export default function Home() {
                 <strong>{asset.symbol}</strong>
                 <span>{asset.name}</span>
               </div>
-              <span className={`change ${asset.bias}`}>{asset.change}</span>
+              <div className="assetBadges">
+                <span className={`change ${asset.bias}`}>{asset.change}</span>
+                <span className={`assetConfidence ${confidenceBand(signalProfiles[asset.symbol].confidence)}`}>
+                  {signalProfiles[asset.symbol].confidence}% CONF
+                </span>
+              </div>
             </div>
             <div className="assetBody">
               <div>
@@ -364,8 +417,14 @@ export default function Home() {
             </div>
             <div className="confidenceDial">
               <div className="dialValue">{activeProfile.confidence}<span>%</span></div>
-              <small>CONFIDENCE</small>
+              <small>MODEL CONFIDENCE</small>
+              <b className={activeConfidenceBand}>{activeConfidenceBand.toUpperCase()}</b>
             </div>
+          </div>
+
+          <div className="confidenceMeaning">
+            <span>WHAT THIS RATE MEANS</span>
+            <p>{confidenceMeaning(activeConfidenceBand)}</p>
           </div>
 
           <div className="evidenceList">
@@ -400,28 +459,39 @@ export default function Home() {
         <aside className="panel scorePanel">
           <div className="panelHeader compact">
             <div>
-              <p className="eyebrow">COMPOSITE SCORE</p>
-              <h2>Signal anatomy</h2>
+              <p className="eyebrow">EXPERIMENTAL MODEL SCORE</p>
+              <h2>Confidence anatomy</h2>
             </div>
-            <span className="scoreNumber">72<span>/100</span></span>
+            <span className={`scoreNumber ${activeConfidenceBand}`}>
+              {activeProfile.confidence}<span>/100</span>
+            </span>
           </div>
           <div className="scoreBars">
-            {[
-              ["Market momentum", 84, "#63e6be"],
-              ["Whale flow", 76, "#7aa2ff"],
-              ["Social velocity", 68, "#c084fc"],
-              ["News sentiment", 61, "#f6c65b"],
-            ].map(([label, value, color]) => (
-              <div className="scoreRow" key={label}>
-                <div><span>{label}</span><b>{value}</b></div>
-                <div className="track"><i style={{ width: `${value}%`, background: color }} /></div>
+            {activeProfile.factors.map((factor) => (
+              <div className="scoreRow" key={factor.label}>
+                <div><span>{factor.label}</span><b>{factor.value}</b></div>
+                <div className="track"><i style={{ width: `${factor.value}%`, background: factor.color }} /></div>
               </div>
             ))}
           </div>
           <div className="regimeNote">
             <span>MODEL NOTE</span>
-            <p>Three independent sources agree. Confidence is reduced by elevated leverage.</p>
+            <p>{activeProfile.modelNote}</p>
           </div>
+          <div className="confidenceScale" aria-label="Confidence scale">
+            <div className={activeConfidenceBand === "high" ? "active high" : "high"}>
+              <strong>HIGH</strong><span>75–100</span>
+            </div>
+            <div className={activeConfidenceBand === "moderate" ? "active moderate" : "moderate"}>
+              <strong>MODERATE</strong><span>60–74</span>
+            </div>
+            <div className={activeConfidenceBand === "low" ? "active low" : "low"}>
+              <strong>LOW</strong><span>0–59</span>
+            </div>
+          </div>
+          <p className="confidenceDisclaimer">
+            Confidence measures evidence agreement—not the probability of profit. Paper outcomes will be used to calibrate it.
+          </p>
         </aside>
       </section>
 
@@ -640,6 +710,8 @@ export default function Home() {
             <div className="learningStats">
               <div><span>Win rate</span><strong>{learning.closedTrades ? `${learning.winRate.toFixed(0)}%` : "—"}</strong></div>
               <div><span>Profit factor</span><strong>{learning.profitFactor === Infinity ? "∞" : learning.profitFactor ? learning.profitFactor.toFixed(2) : "—"}</strong></div>
+              <div><span>High-conf hit rate</span><strong>{learning.highConfidenceTrades ? `${learning.highConfidenceWinRate.toFixed(0)}%` : "—"}</strong></div>
+              <div><span>High-conf sample</span><strong>{learning.highConfidenceTrades}</strong></div>
               <div><span>Realized P/L</span><strong className={portfolio.realizedPnl >= 0 ? "positive" : "negative"}>{signedMoney(portfolio.realizedPnl)}</strong></div>
               <div><span>Unrealized P/L</span><strong className={portfolio.unrealizedPnl >= 0 ? "positive" : "negative"}>{signedMoney(portfolio.unrealizedPnl)}</strong></div>
             </div>
@@ -683,7 +755,7 @@ export default function Home() {
 
         <div className="eventTable" role="table" aria-label="Market signal events">
           <div className="eventRow eventLabels" role="row">
-            <span>TIME</span><span>SOURCE</span><span>EVENT</span><span>IMPACT</span>
+            <span>TIME</span><span>SOURCE</span><span>EVENT</span><span>EVIDENCE</span>
           </div>
           {visibleEvents.map((event) => (
             <div className="eventRow" role="row" key={event.id}>
@@ -693,7 +765,7 @@ export default function Home() {
                 <strong>{event.headline}</strong>
                 <small>{event.asset} · {event.detail}</small>
               </span>
-              <span className={`impact ${event.bias}`}><i /> {event.score}</span>
+              <span className={`impact ${event.bias}`}><i /> {event.score}/100</span>
             </div>
           ))}
           {visibleEvents.length === 0 && <p className="emptyState">No events match this filter.</p>}
