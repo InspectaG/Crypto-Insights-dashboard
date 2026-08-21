@@ -57,6 +57,20 @@ test("server-renders the crypto intelligence dashboard", async () => {
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|Your site is taking shape/i);
 });
 
+test("renders the tested semantic version in the dashboard footer", async () => {
+  const packageMetadata = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  assert.match(packageMetadata.version, /^\d+\.\d+\.\d+$/);
+
+  const response = await render();
+  const html = await response.text();
+  const escapedVersion = packageMetadata.version.replaceAll(".", "\\.");
+
+  assert.match(html, /aria-label="Application version"/);
+  assert.match(html, new RegExp(`GATCHEK SIGNAL ENGINE · v(?:<!-- -->)?${escapedVersion}`));
+});
+
 test("keeps Coinbase credentials on a separate settings page", async () => {
   const response = await render("/settings");
   assert.equal(response.status, 200);

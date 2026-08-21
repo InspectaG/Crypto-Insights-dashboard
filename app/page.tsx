@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import packageMetadata from "../package.json";
 import {
   createPaperAccount,
   learningSummary,
@@ -1318,7 +1319,9 @@ export default function Home() {
 
       <footer>
         <p>Decision support only. Signals are experimental and are not financial advice or a guarantee of returns.</p>
-        <span>GATCHEK SIGNAL ENGINE · PRIVATE MVP</span>
+        <span className="appVersion" aria-label="Application version">
+          GATCHEK SIGNAL ENGINE · v{packageMetadata.version}
+        </span>
       </footer>
     </main>
   );

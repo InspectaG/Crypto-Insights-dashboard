@@ -263,6 +263,7 @@ h1 { font-size: clamp(34px, 4vw, 52px); font-weight: 540; letter-spacing: -.045e
 .eventCopy strong, .eventCopy a { color: var(--ink); display: block; font-size: 11px; font-weight: 520; text-decoration: none; }.eventCopy a:hover { color: var(--blue); text-decoration: underline; }.eventCopy small { color: #66728b; display: block; font-size: 9px; margin-top: 4px; }.impact { font-family: var(--font-geist-mono); font-size: 10px; text-align: right; }.impact i { border-radius: 50%; display: inline-block; height: 5px; margin-right: 5px; width: 5px; }.impact.bullish { color: var(--green); }.impact.bullish i { background: var(--green); }.impact.bearish { color: var(--red); }.impact.bearish i { background: var(--red); }.impact.neutral { color: var(--amber); }.impact.neutral i { background: var(--amber); }.emptyState { color: var(--muted); font-size: 11px; padding: 24px; }
 
 footer { align-items: center; color: #505b71; display: flex; font-family: var(--font-geist-mono); font-size: 8px; justify-content: space-between; letter-spacing: .06em; padding: 5px 2px; } footer p { margin: 0; }
+footer .appVersion { margin-left: auto; white-space: nowrap; }
 
 @media (max-width: 900px) {
   .shell { padding-inline: 22px; }
@@ -302,6 +303,7 @@ footer { align-items: center; color: #505b71; display: flex; font-family: var(--
   .eventRow .impact { display: none; }
   .eventCopy strong { line-height: 1.35; }
   footer { align-items: flex-start; flex-direction: column; gap: 9px; line-height: 1.5; }
+  footer .appVersion { align-self: flex-end; }
 }
 
 @media (max-width: 430px) {

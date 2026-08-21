@@ -41,6 +41,15 @@ pnpm build
 pnpm test
 ```
 
+## Release versioning
+
+`package.json` is the single source of truth for the dashboard version shown in
+the lower-right footer. Every code, configuration, or behavior change must bump
+the semantic version before regression testing. Only the exact version and
+commit that pass `pnpm test` may be published; fixes increment the patch number,
+new backward-compatible features increment the minor number, and breaking
+changes increment the major number.
+
 No API key is required for the MVP market feed. Future news, social, and whale
 provider credentials must be stored as Cloudflare secrets and must never be
 committed to this repository.
